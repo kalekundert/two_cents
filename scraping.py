@@ -29,11 +29,12 @@ class WellsFargo:
 
     title = "Wells Fargo"
 
-    def __init__(self, username, password, state=None):
+    def __init__(self, username, password, state=None, post_buffer=7):
         self.username = username
         self.password = password
         self.state = state if state is not None else {}
-        self.state.setdefault('last_date', datetime.date.today())
+        self.state.setdefault('last_update', datetime.date.today())
+        self.post_buffer = post_buffer
 
     def download(self):
         self.setup_ssl_session()
@@ -120,16 +121,32 @@ class WellsFargo:
         form_url = form['action']
         accounts = []
 
+        # Download all transactions that were posted between today and one week 
+        # before than the last time this program was run.  The one week buffer 
+        # gives transactions a generous amount of time to post, so that no 
+        # transactions are completely neglected.
+
+        from_date = self.state['last_update']
+        from_date -= datetime.timedelta(days=self.post_buffer)
+        to_date = datetime.dat.today()
+
         for option in select.find_all('option'):
+
+            # For some reason, the whole form has to be submitted after an 
+            # account is selected.  So do that...
+
             option_data = {
                     'primaryKey': option['value'],
                     'selectButton': ' Select ',
             }
             self.scraper.post(form_url, option_data)
+
+            # And then download the financial data.
+
             form_data = {
                     'primaryKey': option['value'],
-                    'fromDate': self.state['last_date'].strftime('%m/%d/%y'),
-                    'toDate': datetime.date.today().strftime('%m/%d/%y'),
+                    'fromDate': from_date.strftime('%m/%d/%y'),
+                    'toDate': to_date.strftime('%m/%d/%y'),
                     'fileFormat': 'quickenOfx',
                     'downloadButton': 'Download',
             }
@@ -138,10 +155,14 @@ class WellsFargo:
 
             # If an HTML page is returned, that means there was an error 
             # processing the form.  I'll assume the error is that there were no 
-            # transactions in the given date range, but this may not be right.
+            # transactions in the given date range, but this may be too naive.
 
             if content_type.startswith('text/html'):
                 continue
+
+            # Financial data is returned in the proprietary QFX format, which 
+            # should be compatible with the open OFX standard.  Conveniently, 
+            # python already has a module for parsing this type of data.
 
             bytes_io = io.BytesIO(response.text.encode('utf-8'))
             account = ofxparse.OfxParser.parse(bytes_io).account
@@ -185,7 +206,7 @@ class WellsFargo:
             self.state[account.number] = newest_id
             all_new_debits += new_debits
             
-        self.state = {'last_date': datetime.date.today()}
+        self.state = {'last_update': datetime.date.today()}
         all_new_debits.sort(key=operator.attrgetter('date'))
         return all_new_debits
 
