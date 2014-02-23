@@ -32,6 +32,11 @@ class Account (Base):
     allowances = relationship('Allowance', backref='account')
     filters = relationship('Filter', backref='account')
 
+    transfers_in = relationship('Transfer', backref='payee',
+            primaryjoin='Account.id == Transfer.payee_id')
+    transfers_out = relationship('Transfer', backref='payer',
+            primaryjoin='Account.id == Transfer.payer_id')
+
     def __init__(self, name):
         self.name = name
 
@@ -74,18 +79,32 @@ class Payment (Base):
     account_id = Column(Integer, ForeignKey('accounts.id'))
     date = Column(Date, nullable=False)
     value = Column(Cents, nullable=False)
-    description = Column(Text)
 
-    def __init__(self, account, date, value, description):
+    def __init__(self, account, date, value):
         self.account = account; account.value += value
         self.date = date
         self.value = value
-        self.description = description
 
     def __repr__(self):
         date = format_date(self.date)
         value = format_value(self.value)
         return '<debit id={} date={} value={}>'.format(self.id, date, value)
+
+
+class Transfer (Base):
+    __tablename__ = 'transfers'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    payer_id = Column(Integer, ForeignKey('accounts.id'))
+    payee_id = Column(Integer, ForeignKey('accounts.id'))
+    date = Column(Date, nullable=False)
+    value = Column(Cents, nullable=False)
+
+    def __init__(self, payer, payee, date, value):
+        self.payer = payer; payer.value -= value
+        self.payee = payee; payee.value += value
+        self.date = date
+        self.value = value
 
 
 class Allowance (Base):
@@ -116,6 +135,12 @@ class Allowance (Base):
         session.add_all([self, self.account])
 
 
+class AllowancePayment (Payment):
+    __tablename__ = 'allowance_payments'
+
+    id = Column(Integer, ForeignKey('payments.id'), primary_key=True)
+    allowance_id = Column(Integer, ForeignKey('allowances.id'))
+
 class Savings (Base):
     __tablename__ = 'savings'
 
@@ -134,6 +159,12 @@ class Savings (Base):
                 self.id, self.update_value, self.update_frequency)
 
 
+class SavingsPayment (Payment):
+    __tablename__ = 'savings_payments'
+
+    id = Column(Integer, ForeignKey('payments.id'), primary_key=True)
+    savings_id = Column(Integer, ForeignKey('savings.id'))
+
 class Bank (Base):
     __tablename__ = 'banks'
 
@@ -143,7 +174,7 @@ class Bank (Base):
     password_command = Column(String)
     last_update = Column(Date)
 
-    receipts = relationship('Receipt', backref='bank')
+    receipts = relationship('BankReceipt', backref='bank')
     filters = relationship('Filter', backref='bank')
 
     modules = {
@@ -163,7 +194,7 @@ class Bank (Base):
 
         for account in scraper.download(start_date):
             for transaction in account.statement.transactions:
-                receipt = Receipt(
+                receipt = BankReceipt(
                         account.number,
                         transaction.id,
                         transaction.date,
@@ -196,8 +227,14 @@ class Bank (Base):
             return self.password_raw
 
 
-class Receipt (Base):
-    __tablename__ = 'receipts'
+class BankPayment (Payment):
+    __tablename__ = 'bank_payments'
+
+    id = Column(Integer, ForeignKey('payments.id'), primary_key=True)
+    receipt_id = Column(Integer, ForeignKey('bank_receipts.id'))
+
+class BankReceipt (Base):
+    __tablename__ = 'bank_receipts'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     bank_id = Column(Integer, ForeignKey('banks.id'))
@@ -217,7 +254,7 @@ class Receipt (Base):
         self.assigned = False
 
     def __repr__(self):
-        return '<receipt acct={} txn={} date={} value={}>'.format(
+        return '<bank_receipt acct={} txn={} date={} value={}>'.format(
                 self.account_id, self.transaction_id,
                 format_date(self.date),format_value(self.value))
 
@@ -263,30 +300,6 @@ class Filter (Base):
         return '<filter id={} bank_id={} account_id={} pattern={}>'.format(
                 self.id, self.bank_id, self.account_id, self.pattern)
 
-
-
-class BankPayment (Base):
-    __tablename__ = 'bank_payments'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    bank_id = Column(Integer, ForeignKey('banks.id'))
-
-class AllowancePayment (Base):
-    __tablename__ = 'allowance_payments'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    allowance_id = Column(Integer, ForeignKey('allowances.id'))
-
-class SavingsPayment (Base):
-    __tablename__ = 'savings_payments'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    savings_id = Column(Integer, ForeignKey('savings.id'))
-
-class Transfer (Base):
-    __tablename__ = 'transfers'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
 
 
 class FatalError (BaseException):
@@ -363,7 +376,7 @@ def get_new_receipts(session):
     banks = session.query(Bank).all()
 
     for bank in banks:
-        query = session.query(Receipt).filter_by(bank=bank, assigned=False)
+        query = session.query(BankReceipt).filter_by(bank=bank, assigned=False)
         receipts += query.all()
 
     return receipts

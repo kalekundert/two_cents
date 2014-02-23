@@ -86,6 +86,8 @@ class UpdateBanks:
             print("Connecting to {}...".format(bank.title))
             bank.update(session)
 
+            # Assign value to accounts...
+
 @command
 class ConfigureBank:
     parser = subparsers.add_parser('configure-bank')
