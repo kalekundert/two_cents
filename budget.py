@@ -12,22 +12,24 @@ import subprocess
 import shlex
 import textwrap
 import yaml
-import scraping
+import banking
 from pprint import pprint
+import ui
 
 Base = declarative_base()
 Cents = Integer
 Days = Integer
+Rate = String
 
 class Account (Base):
     __tablename__ = 'accounts'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False, unique=True)
+    value = Column(Cents, nullable=False)
 
-    debits = relationship('Debit', backref='account')
-    credits = relationship('Credit', backref='account')
-    budgets = relationship('Budget', backref='account')
+    payments = relationship('Payment', backref='account')
+    allowances = relationship('Allowance', backref='account')
     filters = relationship('Filter', backref='account')
 
     def __init__(self, name):
@@ -65,37 +67,171 @@ class Account (Base):
                 
 
 
-class Debit (Base):
-    __tablename__ = 'debits'
+class Payment (Base):
+    __tablename__ = 'payments'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     account_id = Column(Integer, ForeignKey('accounts.id'))
-    bank_id = Column(Integer, ForeignKey('banks.id'))
-
     date = Column(Date, nullable=False)
     value = Column(Cents, nullable=False)
-    initial_value = Column(Cents, nullable=False)
     description = Column(Text)
 
-    def __init__(self, date, description, initial_value):
+    def __init__(self, account, date, value, description):
+        self.account = account; account.value += value
         self.date = date
+        self.value = value
         self.description = description
-        self.value = initial_value
-        self.initial_value = initial_value
 
     def __repr__(self):
-        date = self.date.strftime('%m/%d/%y')
-        value = '${}.{:02d}'.format(self.value // 100, self.value % 100)
-        return '<debit date={} value={}>'.format(date, value)
+        date = format_date(self.date)
+        value = format_value(self.value)
+        return '<debit id={} date={} value={}>'.format(self.id, date, value)
+
+
+class Allowance (Base):
+    __tablename__ = 'allowances'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('accounts.id'), primary_key=True)
+
+    update_value = Column(Cents, nullable=False)
+    update_frequency = Column(Rate, nullable=False)
+    last_updated = Column(Date, nullable=False)
+
+    def __init__(self, account, value, frequency='daily'):
+        self.account = account
+        self.update_value = value
+        self.update_frequency = frequency
+        self.last_updated = datetime.date.today()
+
+    def __repr__(self):
+        return '<budget id={} account={} value={} {}>'.format(
+                self.id, self.account.id,
+                self.update_value, self.update_frequency)
+
+    def update(self, session):
+        credit = self.update_value * num_updates_due(self)
+        self.account.value += credit
+        self.last_updated = today
+        session.add_all([self, self.account])
+
+
+class Savings (Base):
+    __tablename__ = 'savings'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    update_value = Column(Cents, nullable=False)
+    update_frequency = Column(Rate, nullable=False)
+    last_updated = Column(Date, nullable=False)
+
+    def __init__(self, value, frequency='monthly'):
+        self.update_value = value
+        self.update_frequency = frequency
+
+    def __repr__(self):
+        return '<savings id={} value={} {}>'.format(
+                self.id, self.update_value, self.update_frequency)
+
+
+class Bank (Base):
+    __tablename__ = 'banks'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, unique=True, nullable=False)
+    username_command = Column(String)
+    password_command = Column(String)
+    last_update = Column(Date)
+
+    receipts = relationship('Receipt', backref='bank')
+    filters = relationship('Filter', backref='bank')
+
+    modules = {
+            'wells-fargo': banking.WellsFargo
+    }
+
+    def __init__(self, name, username_command, password_command):
+        self.name = name
+        self.username_command = username_command
+        self.password_command = password_command
+        self.last_update = datetime.date.today()
+
+    def update(self, session):
+        scraper_class = self.modules[self.name]
+        scraper = scraper_class(self.username, self.password)
+        start_date = self.last_update - datetime.timedelta(days=30)
+
+        for account in scraper.download(start_date):
+            for transaction in account.statement.transactions:
+                receipt = Receipt(
+                        account.number,
+                        transaction.id,
+                        transaction.date,
+                        to_cents(transaction.amount),
+                        transaction.payee + ' ' + transaction.memo)
+
+                if receipt not in self.receipts:
+                    self.receipts.append(receipt)
+
+        session.add(self)
+
+    @property
+    def title(self):
+        return self.modules[self.name].title
+
+    @property
+    def username(self):
+        if self.username_command:
+            command = shlex.split(self.username_command)
+            return subprocess.check_output(command).decode('ascii').strip('\n')
+        else:
+            return ui.get_password(self.title)
+
+    @property
+    def password(self):
+        if self.password_command:
+            command = shlex.split(self.password_command)
+            return subprocess.check_output(command).decode('ascii').strip('\n')
+        else:
+            return self.password_raw
+
+
+class Receipt (Base):
+    __tablename__ = 'receipts'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    bank_id = Column(Integer, ForeignKey('banks.id'))
+    account_id = Column(String)
+    transaction_id = Column(String)
+    date = Column(Date, nullable=False)
+    value = Column(Cents, nullable=False)
+    description = Column(Text)
+    assigned = Column(Boolean)
+
+    def __init__(self, account_id, transaction_id, date, value, description):
+        self.transaction_id = transaction_id
+        self.account_id = account_id
+        self.date = date
+        self.value = value
+        self.description = description
+        self.assigned = False
+
+    def __repr__(self):
+        return '<receipt acct={} txn={} date={} value={}>'.format(
+                self.account_id, self.transaction_id,
+                format_date(self.date),format_value(self.value))
+
+    def __eq__(self, other):
+        self_id = self.account_id, self.transaction_id
+        other_id = other.account_id, other.transaction_id
+        return self_id == other_id
+
 
     def show(self, indent=''):
-        date = self.date.strftime('%m/%d/%y')
-        value = '${}.{:02d}'.format(self.value // 100, self.value % 100)
-        bank = self.bank.title
-
-        print("{}Date:  {}".format(indent, date))
-        print("{}Value: {}".format(indent, value))
-        print("{}Bank:  {}".format(indent, bank))
+        print("{}Date:    {}".format(indent, format_date(self.date)))
+        print("{}Value:   {}".format(indent, format_value(self.value)))
+        print("{}Bank:    {}".format(indent, self.bank.title))
+        print("{}Account: {}".format(indent, self.account))
 
         if len(self.description) < (79 - len(indent) - 13):
             print("{}Description: {}".format(indent, self.description))
@@ -108,132 +244,11 @@ class Debit (Base):
             print('\n'.join(description))
 
     def assign(self, accounts):
-        pass
+        assert sum(accounts.values()) == self.value
 
-
-class Credit (Base):
-    __tablename__ = 'credits'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    account_id = Column(Integer, ForeignKey('accounts.id'), primary_key=True)
-
-    date = Column(Date, nullable=False)
-    value = Column(Cents, nullable=False)
-    initial_value = Column(Cents, nullable=False)
-    max_lifetime = Column(Days)
-    description = Column(Text)
-
-    forever = 0
-
-    def __init__(self, account, value, date):
-        self.account = account
-        self.date = date
-        self.initial_value = self.value = value
-
-    def __repr__(self):
-        return '<credit value={}>'.format(self.value)
-
-    def prune(self, session):
-        if self.max_lifetime == Credit.forever:
-            return
-
-        current_age = datetime.date.today() - self.date
-        if current_age.days > self.max_lifetime:
-            session.delete(self)
-
-
-class Budget (Base):
-    __tablename__ = 'budgets'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    account_id = Column(Integer, ForeignKey('accounts.id'), primary_key=True)
-
-    last_updated = Column(Date, nullable=False)
-    daily_allowance = Column(Cents, nullable=False)
-    credit_duration = Column(Days, nullable=False)
-
-    def __repr__(self):
-        return '<budget account={} allowance={}>'.format(
-                self.account.id, self.daily_allowance)
-
-    def update(self, session):
-        today = datetime.date.today()
-        days_behind = (today - self.last_updated).days
-        one_day = datetime.timedelta(days=1)
-        credit_date = self.last_updated
-
-        for i in range(days_behind):
-            credit_date += one_day
-            credit = Credit(self.account, credit_date, self.daily_allowance)
-            session.add(credit)
-
-        self.last_updated = today
-        session.add(self)
-
-
-class Savings (Base):
-    __tablename__ = 'savings'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-
-    last_updated = Column(Date, nullable=False)
-    value = Column(Cents, nullable=False)
-    frequency = Column(Days, nullable=False)
-
-class Bank (Base):
-    __tablename__ = 'banks'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String, unique=True, nullable=False)
-
-    username_raw = Column(String)
-    username_command = Column(String)
-    password_raw = Column(String)
-    password_command = Column(String)
-    last_state = Column(Text, default=yaml.dump({}), nullable=False)
-
-    filters = relationship('Filter', backref='bank')
-    debits = relationship('Debit', backref='bank')
-
-    #CheckConstraint('username_raw is not null or username_command is not null')
-    #CheckConstraint('password_raw is not null or password_command is not null')
-
-    def __init__(self, name):
-        self.name = name
-        self.last_update = datetime.date.today()
-
-    def update(self, session):
-        state = yaml.load(self.last_state)
-        scraper_class = scraping.modules[self.name]
-        scraper = scraper_class(self.username, self.password, state)
-
-        new_debits = scraper.download()
-        for debit in new_debits: debit.bank = self
-
-        self.last_state = yaml.dump(state)
-        session.add(self)
-
-        return new_debits
-
-    @property
-    def title(self):
-        return scraping.modules[self.name].title
-
-    @property
-    def username(self):
-        if self.username_command:
-            command = shlex.split(self.username_command)
-            return subprocess.check_output(command)
-        else:
-            return self.username_raw
-
-    @property
-    def password(self):
-        if self.password_command:
-            command = shlex.split(self.password_command)
-            return subprocess.check_output(command)
-        else:
-            return self.password_raw
+        for name, value in account.values():
+            account = get_account(name)
+            payment = Payment(account, self.date, value, self.description)
 
 
 class Filter (Base):
@@ -242,8 +257,36 @@ class Filter (Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     bank_id = Column(Integer, ForeignKey('banks.id'))
     account_id = Column(Integer, ForeignKey('accounts.id'))
-
     pattern = Column(String, nullable=False)
+
+    def __repr__(self):
+        return '<filter id={} bank_id={} account_id={} pattern={}>'.format(
+                self.id, self.bank_id, self.account_id, self.pattern)
+
+
+
+class BankPayment (Base):
+    __tablename__ = 'bank_payments'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    bank_id = Column(Integer, ForeignKey('banks.id'))
+
+class AllowancePayment (Base):
+    __tablename__ = 'allowance_payments'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    allowance_id = Column(Integer, ForeignKey('allowances.id'))
+
+class SavingsPayment (Base):
+    __tablename__ = 'savings_payments'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    savings_id = Column(Integer, ForeignKey('savings.id'))
+
+class Transfer (Base):
+    __tablename__ = 'transfers'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
 
 
 class FatalError (BaseException):
@@ -281,45 +324,73 @@ def open_db():
 
         # Make sure the database is properly set up.
         Base.metadata.create_all(engine)
-        if not get_accounts(session):
-            account = Account('unassigned')
-            session.add(account)
 
         # Return the session.
         yield session
         session.commit()
-    except KeyboardInterrupt:
+
+    except (KeyboardInterrupt, EOFError):
         session.rollback()
         print()
-    except EOFError:
+    except banking.LoginError as error:
         session.rollback()
-        print()
-    except FatalError as error:
-        session.rollback()
-        error.handle()
+        ui.login_failed(error)
     except:
         session.rollback()
         raise
     finally:
         session.close()
 
+def get_bank(session, name):
+    return session.query(Bank).filter_by(name=name).one()
+
 def get_banks(session):
     return session.query(Bank).all()
+
+def get_known_bank_names():
+    return Bank.modules.keys()
+
+def bank_exists(session, name):
+    try:
+        get_bank(session, name)
+    except sqlalchemy.orm.exc.NoResultFound:
+        return False
+    else:
+        return True
+
+def get_new_receipts(session):
+    receipts = []
+    banks = session.query(Bank).all()
+
+    for bank in banks:
+        query = session.query(Receipt).filter_by(bank=bank, assigned=False)
+        receipts += query.all()
+
+    return receipts
+
 def get_account(session, name):
     return session.query(Account).filter_by(name=name).one()
 
 def get_accounts(session):
     return session.query(Account).all()
 
-def get_holding_area(session):
-    return session.query(Account).filter_by(name='unassigned').one()
-
-def get_unassigned_debits(session):
-    return get_holding_area(session).debits
-
 def get_debits(session):
     return session.query(Debits).all()
 
 def get_savings(session):
     return session.query(Savings).all()
+
+
+def format_date(date):
+    return date.strftime('%m/%d/%y')
+
+def format_value(value):
+    return '${}.{:02d}'.format(value // 100, value % 100)
+
+def to_cents(dollars):
+    return int(100 * dollars)
+
+def is_update_due(budget):
+    return False
+
 

@@ -1,52 +1,34 @@
 #!/usr/bin/env python3
 
-import logging
-import ssl
-import os, sys, re, io, csv
-import budget
-
-import requests
+import os, sys, re, io, datetime
+import requests, ssl, ofxparse
 from bs4 import BeautifulSoup
 from urllib3.poolmanager import PoolManager
-import datetime
-from pprint import pprint
-import ofxparse
-import functools
-import operator
-
-# The classes in this module retrieve financial information from the internet.  
-# This requires scraping for every bank I'm aware of, but maybe someday there 
-# will be a bank that provides a nice API for programmatic access.  A very 
-# specific interface is expected of the scraper classes.  The constructor must 
-# take three arguments: a username, a password, and a state dictionary.  There 
-# must be a download() method which returns all debits which have not already 
-# been downloaded.  The purpose of the state dictionary given earlier is to 
-# make it possible to determine which transactions have already been seen.  The 
-# state dictionary is stored in the config database after being serialized via 
-# YAML, so don't put anything into it that isn't compatible with YAML.
 
 class WellsFargo:
 
     title = "Wells Fargo"
 
-    def __init__(self, username, password, state=None, post_buffer=7):
+    def __init__(self, username, password):
         self.username = username
         self.password = password
-        self.state = state if state is not None else {}
-        self.state.setdefault('last_update', datetime.date.today())
-        self.post_buffer = post_buffer
 
-    def download(self):
+        if not username or not password:
+            raise LoginError(self)
+
+    def download(self, from_date=None, to_date=None):
+        if to_date is None: to_date = datetime.date.today()
+        if from_date is None: from_date = to_date - datetime.timedelta(30)
+
         self.setup_ssl_session()
         account_page = self.load_account_page()
         activity_page = self.load_activity_page(account_page)
         download_page = self.load_download_page(activity_page)
-        accounts = self.download_transactions(download_page)
-        return self.find_new_debits(accounts)
+        return self.download_transactions(download_page, from_date, to_date)
 
     def setup_ssl_session(self):
-        # Wells Fargo hangs if you you the default SSL configuration provided 
-        # by requests, so we have to use a custom one.  See:
+        # Wells Fargo hangs if the default SSL configuration provided by 
+        # requests is used, so a custom one is used instead.  See:
         # http://lukasa.co.uk/2013/01/Choosing_SSL_Version_In_Requests
 
         class TLSv1Adapter(requests.adapters.HTTPAdapter):
@@ -72,24 +54,21 @@ class WellsFargo:
         }
         self.scraper.post('https://online.wellsfargo.com/signon', login_data)
         response = self.scraper.get('https://online.wellsfargo.com/das/cgi-bin/session.cgi?screenid=SIGNON_PORTAL_PAUSE')
-        self.verify_login(response.text)
+
+        with open('debug/login_response.html', 'w') as file:
+            file.write(response.text)
+
+        # Make sure the login worked.
+
+        soup = BeautifulSoup(response.text)
+        error_message = soup.find(text=re.compile(
+            "^We do not recognize your username and/or password"))
+        if error_message: raise LoginError(self)
 
         try:
             return self.skip_online_statement(response.text)
         except:
             return response.text
-
-    def verify_login(self, html):
-        soup = BeautifulSoup(html)
-        tag = soup.find('h1', id='bodycontent')
-        if not tag: return
-
-        message = str(tag.string)
-        bad_login_message = 'For security reasons,'
-
-        if message.startswith(bad_login_message):
-            raise budget.LoginError(
-                    'Wells Fargo', self.username, self.password)
 
     def skip_online_statement(self, html):
         soup = BeautifulSoup(html)
@@ -97,6 +76,10 @@ class WellsFargo:
                 name='input', attrs={'name': 'Considering'}).parent['action']
         data = {'Considering': 'Remind me later'}
         response = self.scraper.post(cancel_url, data)
+
+        with open('debug/skip_question_response.html', 'w') as file:
+            file.write(response.text)
+
         return response.text
 
     def load_activity_page(self, html):
@@ -105,6 +88,10 @@ class WellsFargo:
         account_link = soup.find(name='a', attrs=link_attrs)
         account_url = account_link['href']
         response = self.scraper.get(account_url)
+
+        with open('debug/activity_response.html', 'w') as file:
+            file.write(response.text)
+
         return response.text
 
     def load_download_page(self, html):
@@ -112,23 +99,18 @@ class WellsFargo:
         section = soup.find('div', id='transactionSectionWrapper')
         url = section.div.a['href']
         response = self.scraper.get(url)
+
+        with open('debug/download_response.html', 'w') as file:
+            file.write(response.text)
+
         return response.text
 
-    def download_transactions(self, html):
+    def download_transactions(self, html, from_date, to_date):
         soup = BeautifulSoup(html)
         form = soup.find('form', {'name': 'DownloadFormBean'})
         select = form.find('select', id='Account')
         form_url = form['action']
         accounts = []
-
-        # Download all transactions that were posted between today and one week 
-        # before than the last time this program was run.  The one week buffer 
-        # gives transactions a generous amount of time to post, so that no 
-        # transactions are completely neglected.
-
-        from_date = self.state['last_update']
-        from_date -= datetime.timedelta(days=self.post_buffer)
-        to_date = datetime.dat.today()
 
         for option in select.find_all('option'):
 
@@ -141,7 +123,7 @@ class WellsFargo:
             }
             self.scraper.post(form_url, option_data)
 
-            # And then download the financial data.
+            # ...and then download the financial data.
 
             form_data = {
                     'primaryKey': option['value'],
@@ -165,58 +147,24 @@ class WellsFargo:
             # python already has a module for parsing this type of data.
 
             bytes_io = io.BytesIO(response.text.encode('utf-8'))
-            account = ofxparse.OfxParser.parse(bytes_io).account
-            accounts.append(account)
+            ofx = ofxparse.OfxParser.parse(bytes_io)
+            accounts += ofx.accounts
 
         return accounts
 
-    def find_new_debits(self, accounts):
-        all_new_debits = []
 
-        for account in accounts:
-            oldest_id = self.state.get(account.number)
-            newest_id = oldest_id
-            new_debits = []
+class LoginError (Exception):
 
-            # The following code assumes that the transactions in the QFX file 
-            # appear in the same order that they were posted.  This assumption 
-            # is not guaranteed by the QFX file format.  If it's violated, it 
-            # could result in transactions being spuriously ignored.
-
-            for transaction in account.statement.transactions:
-                if transaction.amount > 0:
-                    continue
-
-                debit = budget.Debit(
-                        transaction.date,
-                        transaction.payee + ' ' + transaction.memo,
-                        abs(int(100 * transaction.amount)))
-
-                new_debits.append(debit)
-                newest_id = transaction.id
-
-                # If the oldest ID is seen, it means that all the debits that 
-                # have been encountered to this point are duplicates.  Any 
-                # further transactions will certainly be new.
-
-                if transaction.id == oldest_id:
-                    new_debits = []
-                    continue
-
-            self.state[account.number] = newest_id
-            all_new_debits += new_debits
-            
-        self.state = {'last_update': datetime.date.today()}
-        all_new_debits.sort(key=operator.attrgetter('date'))
-        return all_new_debits
+    def __init__(self, bank):
+        self.bank = bank.title
+        self.username = bank.username
+        self.password = bank.password
 
 
-
-modules = {
-        'wells-fargo': WellsFargo
-}
 
 if __name__ == '__main__':
+    from pprint import pprint
+
     with open('/home/kale/download.html') as file:
         html = file.read()
     with open('transactions.qfx') as file:
