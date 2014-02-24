@@ -1,3 +1,4 @@
 #!/usr/bin/env sh
 
-sqliteman ~/.config/budget/budget.db &
+~/hacking/scripts/fork sqliteman ~/.config/budget/budget.db
+
