@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 
-import os
-import sqlalchemy
-from sqlalchemy.orm import *
-from sqlalchemy.types import *
-from sqlalchemy.schema import *
-from sqlalchemy.ext.declarative import declarative_base
-from contextlib import contextmanager
 import datetime
+import os
 import subprocess
 import shlex
 import textwrap
-import yaml
+
 import banking
+import sqlalchemy
+import yaml
+
 from pprint import pprint
-import ui
+from contextlib import contextmanager
+from sqlalchemy.orm import *
+from sqlalchemy.schema import *
+from sqlalchemy.types import *
+from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
 Cents = Integer
@@ -37,14 +38,17 @@ class Account (Base):
     transfers_out = relationship('Transfer', backref='payer',
             primaryjoin='Account.id == Transfer.payer_id')
 
-    def __init__(self, name):
+    def __init__(self, name, value=0):
         self.name = name
+        self.value = value
 
     def __repr__(self):
         return '<account name={}>'.format(self.name)
 
-    def update(self):
+    def show(self, indent=''):
+        print('{0}{1} {2}'.format(indent, self.name, format_value(self.value)))
 
+    def update(self):
         key = lambda credit: (credit.max_lifetime == 0, credit.days_remaining)
         self.credits.sort(key=key)
 
@@ -187,9 +191,9 @@ class Bank (Base):
         self.password_command = password_command
         self.last_update = datetime.date.today()
 
-    def update(self, session):
+    def update(self, session, username, password):
         scraper_class = self.modules[self.name]
-        scraper = scraper_class(self.username, self.password)
+        scraper = scraper_class(username, password)
         start_date = self.last_update - datetime.timedelta(days=30)
 
         for account in scraper.download(start_date):
@@ -216,7 +220,7 @@ class Bank (Base):
             command = shlex.split(self.username_command)
             return subprocess.check_output(command).decode('ascii').strip('\n')
         else:
-            return ui.get_password(self.title)
+            raise AskForUsername(bank)
 
     @property
     def password(self):
@@ -224,7 +228,7 @@ class Bank (Base):
             command = shlex.split(self.password_command)
             return subprocess.check_output(command).decode('ascii').strip('\n')
         else:
-            return self.password_raw
+            raise AskForPassword(bank)
 
 
 class BankPayment (Payment):
@@ -232,6 +236,12 @@ class BankPayment (Payment):
 
     id = Column(Integer, ForeignKey('payments.id'), primary_key=True)
     receipt_id = Column(Integer, ForeignKey('bank_receipts.id'))
+
+    def __init__(self, account, receipt, value=None):
+        if value is None: value = receipt.value
+        Payment.__init__(self, account, receipt.date, value)
+        self.receipt = receipt
+
 
 class BankReceipt (Base):
     __tablename__ = 'bank_receipts'
@@ -243,7 +253,9 @@ class BankReceipt (Base):
     date = Column(Date, nullable=False)
     value = Column(Cents, nullable=False)
     description = Column(Text)
-    assigned = Column(Boolean)
+    status = Column(Enum('unassigned', 'assigned', 'ignored'))
+
+    payments = relationship('BankPayment', backref='receipt')
 
     def __init__(self, account_id, transaction_id, date, value, description):
         self.transaction_id = transaction_id
@@ -251,7 +263,7 @@ class BankReceipt (Base):
         self.date = date
         self.value = value
         self.description = description
-        self.assigned = False
+        self.status = 'unassigned'
 
     def __repr__(self):
         return '<bank_receipt acct={} txn={} date={} value={}>'.format(
@@ -268,7 +280,7 @@ class BankReceipt (Base):
         print("{}Date:    {}".format(indent, format_date(self.date)))
         print("{}Value:   {}".format(indent, format_value(self.value)))
         print("{}Bank:    {}".format(indent, self.bank.title))
-        print("{}Account: {}".format(indent, self.account))
+        print("{}Account: {}".format(indent, self.account_id))
 
         if len(self.description) < (79 - len(indent) - 13):
             print("{}Description: {}".format(indent, self.description))
@@ -280,12 +292,20 @@ class BankReceipt (Base):
             print("{}Description:".format(indent))
             print('\n'.join(description))
 
-    def assign(self, accounts):
+    def assign(self, session, accounts):
         assert sum(accounts.values()) == self.value
 
-        for name, value in account.values():
-            account = get_account(name)
-            payment = Payment(account, self.date, value, self.description)
+        for name, value in accounts.items():
+            account = get_account(session, name)
+            payment = BankPayment(account, self, value)
+            session.add(payment)
+
+        self.status = 'assigned'
+        session.add(self)
+
+    def ignore(self, session):
+        self.status = 'ignored'
+        session.add(self)
 
 
 class Filter (Base):
@@ -299,31 +319,6 @@ class Filter (Base):
     def __repr__(self):
         return '<filter id={} bank_id={} account_id={} pattern={}>'.format(
                 self.id, self.bank_id, self.account_id, self.pattern)
-
-
-
-class FatalError (BaseException):
-
-    def handle(self):
-        raise self
-
-
-class LoginError (FatalError):
-
-    def __init__(self, bank, username, password):
-        self.bank = bank
-        self.username = username
-        self.password = password
-
-    def handle(self):
-        try:
-            print('Unable to login to {}.'.format(self.bank))
-            print('User name: {}   Password: {}   (Ctrl-C to clear)'.\
-                    format(self.username, self.password)[:79], end='')
-            input()
-
-        except (KeyboardInterrupt, EOFError):
-            print('\r' + 79 * ' ')
 
 
 
@@ -347,15 +342,33 @@ def open_db():
         print()
     except banking.LoginError as error:
         session.rollback()
-        ui.login_failed(error)
+        raise LoginError(error.bank, error.username, error.password)
     except:
         session.rollback()
         raise
     finally:
         session.close()
 
+def get_account(session, name):
+    try:
+        return session.query(Account).filter_by(name=name).one()
+    except sqlalchemy.orm.exc.NoResultFound:
+        raise NoSuchAccount(name)
+
+def get_accounts(session):
+    return session.query(Account).all()
+
+def account_exists(session, name):
+    return session.query(Account).filter_by(name=name).count() > 0
+
+def get_unknown_accounts(session, names):
+    return [x for x in names if not account_exists(session, x)]
+
 def get_bank(session, name):
-    return session.query(Bank).filter_by(name=name).one()
+    try:
+        return session.query(Bank).filter_by(name=name).one()
+    except sqlalchemy.orm.exc.NoResultFound:
+        raise NoSuchBank(name)
 
 def get_banks(session):
     return session.query(Bank).all()
@@ -364,46 +377,63 @@ def get_known_bank_names():
     return Bank.modules.keys()
 
 def bank_exists(session, name):
-    try:
-        get_bank(session, name)
-    except sqlalchemy.orm.exc.NoResultFound:
-        return False
-    else:
-        return True
+    return session.query(Bank).filter_by(name=name).count() > 0
 
 def get_new_receipts(session):
     receipts = []
     banks = session.query(Bank).all()
 
     for bank in banks:
-        query = session.query(BankReceipt).filter_by(bank=bank, assigned=False)
+        query = session.query(BankReceipt)
+        query = query.filter_by(bank=bank, status='unassigned')
         receipts += query.all()
 
     return receipts
-
-def get_account(session, name):
-    return session.query(Account).filter_by(name=name).one()
-
-def get_accounts(session):
-    return session.query(Account).all()
-
-def get_debits(session):
-    return session.query(Debits).all()
-
-def get_savings(session):
-    return session.query(Savings).all()
 
 
 def format_date(date):
     return date.strftime('%m/%d/%y')
 
 def format_value(value):
-    return '${}.{:02d}'.format(value // 100, value % 100)
+    if value < 0:
+        value = abs(value)
+        return '-${}.{:02d}'.format(value // 100, value % 100)
+    else:
+        return '${}.{:02d}'.format(value // 100, value % 100)
 
 def to_cents(dollars):
-    return int(100 * dollars)
+    return int(100 * float(dollars))
 
 def is_update_due(budget):
     return False
 
+def require_accounts(session):
+    if session.query(Account).count() == 0:
+        raise NoAccounts()
+
+def require_banks(session):
+    if session.query(Bank).count() == 0:
+        raise NoBanks()
+
+
+class AskForUsername (Exception):
+    def __init__(self, bank):
+        self.bank = bank
+
+class AskForPassword (Exception):
+    def __init__(self, bank):
+        self.bank = bank
+
+class NoSuchAccount (Exception):
+    def __init__(self, name):
+        self.name = name
+
+class NoSuchBank (Exception):
+    def __init__(self, name):
+        self.name = name
+class NoAccounts (Exception):
+    pass
+
+class NoBanks (Exception):
+    pass
 
