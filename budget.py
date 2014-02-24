@@ -31,7 +31,6 @@ class Account (Base):
 
     payments = relationship('Payment', backref='account')
     allowances = relationship('Allowance', backref='account')
-    filters = relationship('Filter', backref='account')
 
     transfers_in = relationship('Transfer', backref='payee',
             primaryjoin='Account.id == Transfer.payee_id')
@@ -95,22 +94,6 @@ class Payment (Base):
         return '<debit id={} date={} value={}>'.format(self.id, date, value)
 
 
-class Transfer (Base):
-    __tablename__ = 'transfers'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    payer_id = Column(Integer, ForeignKey('accounts.id'))
-    payee_id = Column(Integer, ForeignKey('accounts.id'))
-    date = Column(Date, nullable=False)
-    value = Column(Cents, nullable=False)
-
-    def __init__(self, payer, payee, date, value):
-        self.payer = payer; payer.value -= value
-        self.payee = payee; payee.value += value
-        self.date = date
-        self.value = value
-
-
 class Allowance (Base):
     __tablename__ = 'allowances'
 
@@ -139,11 +122,21 @@ class Allowance (Base):
         session.add_all([self, self.account])
 
 
-class AllowancePayment (Payment):
-    __tablename__ = 'allowance_payments'
+class Transfer (Base):
+    __tablename__ = 'transfers'
 
-    id = Column(Integer, ForeignKey('payments.id'), primary_key=True)
-    allowance_id = Column(Integer, ForeignKey('allowances.id'))
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    payer_id = Column(Integer, ForeignKey('accounts.id'))
+    payee_id = Column(Integer, ForeignKey('accounts.id'))
+    date = Column(Date, nullable=False)
+    value = Column(Cents, nullable=False)
+
+    def __init__(self, payer, payee, date, value):
+        self.payer = payer; payer.value -= value
+        self.payee = payee; payee.value += value
+        self.date = date
+        self.value = value
+
 
 class Savings (Base):
     __tablename__ = 'savings'
@@ -179,7 +172,6 @@ class Bank (Base):
     last_update = Column(Date)
 
     receipts = relationship('BankReceipt', backref='bank')
-    filters = relationship('Filter', backref='bank')
 
     modules = {
             'wells-fargo': banking.WellsFargo
@@ -306,19 +298,6 @@ class BankReceipt (Base):
     def ignore(self, session):
         self.status = 'ignored'
         session.add(self)
-
-
-class Filter (Base):
-    __tablename__ = 'filters'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    bank_id = Column(Integer, ForeignKey('banks.id'))
-    account_id = Column(Integer, ForeignKey('accounts.id'))
-    pattern = Column(String, nullable=False)
-
-    def __repr__(self):
-        return '<filter id={} bank_id={} account_id={} pattern={}>'.format(
-                self.id, self.bank_id, self.account_id, self.pattern)
 
 
 
