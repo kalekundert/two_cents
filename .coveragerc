@@ -1,0 +1,9 @@
+# coverage3 run ./tests.py
+# coverage3 html
+
+[run]
+branch = True
+source = budget, cli
+
+[html]
+directory = coverage

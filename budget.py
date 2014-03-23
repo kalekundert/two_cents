@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+# Imports (fold)
 import datetime
 import os
 import subprocess
@@ -17,10 +18,59 @@ from sqlalchemy.schema import *
 from sqlalchemy.types import *
 from sqlalchemy.ext.declarative import declarative_base
 
+# Schema Types (fold)
 Base = declarative_base()
 Cents = Integer
 Days = Integer
-Rate = String
+
+class Money:
+    pass
+
+class Frequency:
+
+    class Type (TypeDecorator):
+        impl = String
+
+        def process_bind_param(self, param, dialect):
+            if isinstance(param, Frequency):
+                return param.frequency
+            else:
+                Frequency.validate(param)
+                return param
+
+        def process_result_value(self, value, dialect):
+            return Frequency(value)
+
+        def copy(self):
+            return Frequency.Type()
+
+
+    def __init__(self, frequency):
+        self.validate(frequency)
+        self.frequency = frequency
+
+    @staticmethod
+    def validate(frequency):
+        if frequency not in ('daily', 'monthly', 'yearly'):
+            raise UnknownFrequency(frequency)
+        
+    def payments_due(self, last_update, date_canceled):
+        this_update = today() if date_canceled is None else date_canceled
+        days_elapsed = (this_update - last_update).days
+        years_elapsed = this_update.year - last_update.year
+        months_elapsed = \
+                12 * years_elapsed + this_update.month - last_update.month
+
+        if self.frequency == 'daily':
+            return days_elapsed
+
+        if self.frequency == 'monthly':
+            return months_elapsed
+
+        if self.frequency == 'yearly':
+            return years_elapsed
+
+
 
 class Account (Base):
     __tablename__ = 'accounts'
@@ -47,32 +97,9 @@ class Account (Base):
     def show(self, indent=''):
         print('{0}{1} {2}'.format(indent, self.name, format_value(self.value)))
 
-    def update(self):
-        key = lambda credit: (credit.max_lifetime == 0, credit.days_remaining)
-        self.credits.sort(key=key)
-
-        # Get rid of any expired credits.
-
-        for credit in self.credits:
-            credit.prune()
-
-        # Update any budgets linked to this account.
-
-        for budget in self.budgets:
-            budget.update()
-
-        # Pay off as many debits as possible.
-
-        for debit in self.debits:
-            for credit in self.credits:
-                debit.value -= credit.value
-                credit.value -= debit.value
-
-                if debit.value <= 0:
-                    session.delete(debit); break
-                if credit.value <= 0:
-                    session.delete(credit)
-                
+    def update(self, session):
+        for allowance in self.allowances:
+            allowance.update(session)
 
 
 class Payment (Base):
@@ -98,17 +125,19 @@ class Allowance (Base):
     __tablename__ = 'allowances'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    account_id = Column(Integer, ForeignKey('accounts.id'), primary_key=True)
+    account_id = Column(Integer, ForeignKey('accounts.id'))
 
     update_value = Column(Cents, nullable=False)
-    update_frequency = Column(Rate, nullable=False)
+    update_frequency = Column(Frequency.Type, nullable=False)
     last_updated = Column(Date, nullable=False)
+    date_canceled = Column(Date)
 
-    def __init__(self, account, value, frequency='daily'):
+    def __init__(self, account, value, frequency):
         self.account = account
         self.update_value = value
         self.update_frequency = frequency
-        self.last_updated = datetime.date.today()
+        self.last_updated = today()
+        self.date_canceled = None
 
     def __repr__(self):
         return '<budget id={} account={} value={} {}>'.format(
@@ -116,10 +145,22 @@ class Allowance (Base):
                 self.update_value, self.update_frequency)
 
     def update(self, session):
-        credit = self.update_value * num_updates_due(self)
-        self.account.value += credit
-        self.last_updated = today
-        session.add_all([self, self.account])
+        if self.date_canceled is not None:
+            return
+
+        self.account.value += self.update_value * \
+                self.update_frequency.payments_due(
+                        self.last_updated, self.date_canceled)
+
+        self.last_updated = today()
+
+        session.add(self)
+        session.add(self.account)
+
+    def cancel(self, session):
+        self.update()
+        self.date_canceled = today()
+        assert self.last_update == self.date_canceled
 
 
 class Transfer (Base):
@@ -144,16 +185,19 @@ class Savings (Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
 
     update_value = Column(Cents, nullable=False)
-    update_frequency = Column(Rate, nullable=False)
+    update_frequency = Column(Frequency.Type, nullable=False)
     last_updated = Column(Date, nullable=False)
 
-    def __init__(self, value, frequency='monthly'):
+    def __init__(self, value, frequency):
         self.update_value = value
         self.update_frequency = frequency
 
     def __repr__(self):
         return '<savings id={} value={} {}>'.format(
                 self.id, self.update_value, self.update_frequency)
+
+    def update(self):
+        pass
 
 
 class SavingsPayment (Payment):
@@ -181,7 +225,7 @@ class Bank (Base):
         self.name = name
         self.username_command = username_command
         self.password_command = password_command
-        self.last_update = datetime.date.today()
+        self.last_update = today()
 
     def update(self, session, username, password):
         scraper_class = self.modules[self.name]
@@ -302,10 +346,11 @@ class BankReceipt (Base):
 
 
 @contextmanager
-def open_db():
+def open_db(path=None):
     try:
         # Create a new session.
-        url = 'sqlite:///' + os.path.expanduser('~/.config/budget/budget.db')
+        path = path or '~/.config/budget/budget.db'
+        url = 'sqlite:///' + os.path.expanduser(path)
         engine = sqlalchemy.create_engine(url)
         session = sqlalchemy.orm.sessionmaker(bind=engine)()
 
@@ -328,6 +373,13 @@ def open_db():
     finally:
         session.close()
 
+def update_accounts(session):
+    for account in get_accounts(session):
+        account.update(session)
+
+    for savings in get_savings(session):
+        savings.update(session)
+
 def get_account(session, name):
     try:
         return session.query(Account).filter_by(name=name).one()
@@ -336,6 +388,9 @@ def get_account(session, name):
 
 def get_accounts(session):
     return session.query(Account).all()
+
+def get_num_accounts(session):
+    return session.query(Account).count()
 
 def account_exists(session, name):
     return session.query(Account).filter_by(name=name).count() > 0
@@ -352,11 +407,17 @@ def get_bank(session, name):
 def get_banks(session):
     return session.query(Bank).all()
 
+def get_num_banks(session):
+    return session.query(Bank).count()
+
 def get_known_bank_names():
     return Bank.modules.keys()
 
 def bank_exists(session, name):
     return session.query(Bank).filter_by(name=name).count() > 0
+
+def get_savings(session):
+    return []
 
 def get_new_receipts(session):
     receipts = []
@@ -370,6 +431,11 @@ def get_new_receipts(session):
     return receipts
 
 
+def parse_budget(budget):
+    # If an exception is raised, it is guaranteed to be a ValueError.
+    value_str, frequency_str = budget.split()
+    return to_cents(value_str), Frequency(frequency_str)
+
 def format_date(date):
     return date.strftime('%m/%d/%y')
 
@@ -381,18 +447,16 @@ def format_value(value):
         return '${}.{:02d}'.format(value // 100, value % 100)
 
 def to_cents(dollars):
+    # The input to this function will either be a float or a string.  If it's a 
+    # string, remove any dollar signs before further processing.
+    try: dollars.replace('$', '')
+    except AttributeError: pass
     return int(100 * float(dollars))
 
-def is_update_due(budget):
-    return False
-
-def require_accounts(session):
-    if session.query(Account).count() == 0:
-        raise NoAccounts()
-
-def require_banks(session):
-    if session.query(Bank).count() == 0:
-        raise NoBanks()
+def today():
+    """ Return today's date.  This function is important because it allows the 
+    different dates to be used during testing.  It's also convenient. """
+    return datetime.date.today()
 
 
 class AskForUsername (Exception):
@@ -410,9 +474,8 @@ class NoSuchAccount (Exception):
 class NoSuchBank (Exception):
     def __init__(self, name):
         self.name = name
-class NoAccounts (Exception):
-    pass
 
-class NoBanks (Exception):
-    pass
+class UnknownFrequency (ValueError):
+    def __init__(self, frequency):
+        self.frequency = frequency
 

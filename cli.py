@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 
-import argparse, argcomplete, readline
+import sys, argparse, argcomplete, readline
 import budget, banking
 from pprint import pprint
 
+# Things to do
+# ============
+# 1. Implement remaining commands
+# 2. Write tests for all untested commands.
+# 3. Add allowances to 'show-accounts'
+
 parser = argparse.ArgumentParser()
+parser.add_argument('--database', default='~/.config/budget/budget.db')
 subparsers = parser.add_subparsers()
 
 def command(*args):
@@ -18,7 +25,7 @@ def command(*args):
         if not isinstance(cls.run, types.FunctionType): raise error
 
         def run_with_session(arguments):
-            with budget.open_db() as session:
+            with budget.open_db(arguments.database) as session:
                 cls.run(session, arguments)
 
         for parser in (cls.parser,) + parsers:
@@ -30,22 +37,24 @@ def command(*args):
     else:
         return functools.partial(decorator, parsers=args)
 
+def setup_allowance_arguments(parser):
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--allowance', '-a', nargs=2)
+    group.add_argument('--savings', '-s', action='store_true')
+
 
 @command
 class AddAccount:
     parser = subparsers.add_parser('add')
     parser.add_argument('name')
-    parser.add_argument('--value', type=float, default=0)
+    setup_allowance_arguments(parser)
     
     @staticmethod   # (no fold)
     def run(session, arguments):
-        if budget.account_exists(session, arguments.name):
-            print("Account '{}' already exists.".format(arguments.name))
-            return
-
-        value = budget.to_cents(arguments.value)
-        account = budget.Account(arguments.name, value)
+        require_no_account(session, arguments.name)
+        account = budget.Account(arguments.name)
         session.add(account)
+        setup_allowance(session, account, arguments)
 
 @command
 class AddBank:
@@ -69,17 +78,23 @@ class AddBank:
 class AddSavings:
     pass
 
+class MakeTransfer:
+    pass
+
 @command
-class ConfigureAccount:
-    parser = subparsers.add_parser('config')
+class ModifyAllowance:
+    parser = subparsers.add_parser('modify-allowance')
+    parser.add_argument('name')
+    setup_allowance_arguments(parser)
 
     @staticmethod   # (no fold)
     def run(session, arguments):
-        raise NotImplementedError
+        account = require_account(arguments.name)
+        setup_allowance(session, account, arguments)
 
 @command
-class ConfigureBank:
-    parser = subparsers.add_parser('configure-bank')
+class ModifyBank:
+    parser = subparsers.add_parser('modify-bank')
     parser.add_argument('bank', choices=budget.get_known_bank_names())
     parser.add_argument('--username', '-u')
     parser.add_argument('--password', '-p')
@@ -96,7 +111,7 @@ class ConfigureBank:
 
         session.add(bank)
 
-class MakeTransfer:
+class ModifySavings:
     pass
 
 @command
@@ -106,11 +121,8 @@ class RemoveAccount:
 
     @staticmethod   # (no fold)
     def run(session, arguments):
-        try:
-            account = budget.get_account(session, arguments.account)
-            session.delete(account)
-        except budget.NoSuchAccount:
-            print("Account '{0}' not found.".format(arguments.account))
+        account = require_ccount(session, arguments.account)
+        session.delete(account)
 
 @command
 class RemoveBank:
@@ -126,14 +138,28 @@ class RemoveBank:
             print("Bank '{0}' not found.".format(arguments.bank))
 
 @command
+class RenameAccount:
+    parser = subparsers.add_parser('rename')
+    parser.add_argument('old-name')
+    parser.add_argument('new-name')
+    setup_allowance_arguments(parser)
+
+    @staticmethod   # (no fold)
+    def run(session, arguments):
+        require_no_account(session, arguments.new_name)
+        account = require_account(session, arguments.old_name)
+        account.name = arguments.new_name
+        session.add(account)
+
+@command
 class ShowAccounts:
     parser = subparsers.add_parser('show')
     parser.add_argument('--fast', action='store_true')
     
     @staticmethod   # (no fold)
     def run(session, arguments):
-        budget.require_accounts(session)
-        budget.require_banks(session)
+        require_any_accounts(session)
+        require_any_banks(session)
 
         update_accounts(session)
         if not arguments.fast: update_banks(session)
@@ -151,7 +177,7 @@ class ShowBanks:
     def run(session, arguments):
         import datetime
 
-        budget.require_banks(session)
+        require_any_banks(session)
         banks = budget.get_banks(session)
 
         row = '{0:25}{1}'
@@ -164,12 +190,21 @@ class ShowBanks:
             print(row.format(title, date))
 
 @command
+class UpdateAccounts:
+    parser = subparsers.add_parser('update')
+
+    @staticmethod   # (no fold)
+    def run(session, arguments):
+        require_any_accounts(session)
+        update_accounts(session)
+
+@command
 class UpdateBanks:
     parser = subparsers.add_parser('update-banks')
 
     @staticmethod   # (no fold)
     def run(session, arguments):
-        budget.require_banks(session)
+        require_any_banks(session)
         update_banks(session)
 
 
@@ -213,13 +248,130 @@ def get_bank_password(bank):
         import getpass
         return getpass.getpass("Password for {}: ".format(bank.title))
 
+def require_account(session, name):
+    try: return budget.get_account(session, name)
+    except budget.NoSuchAccount:
+        print("Account '{}' not found.".format(name))
+        sys.exit()
+
+def require_no_account(session, name):
+    if budget.account_exists(session, name):
+        print("Account '{}' already exists.".format(name))
+        sys.exit()
+
+def require_any_accounts(session):
+    if budget.get_num_accounts(session) == 0:
+        print("No accounts found.  Add an account using 'budget add'.")
+        sys.exit()
+
+def require_any_banks(session):
+    if budget.get_num_banks(session) == 0:
+        print("No banks found.  Add a bank using 'budget add-bank'.")
+        sys.exit()
+
 def update_accounts(session):
-    print("Allowances not yet supported.")
+    budget.update_accounts(session)
 
 def update_banks(session):
     for bank in budget.get_banks(session):
-        print("Connecting to {}...".format(bank.title))
-        bank.update(session, get_bank_username(bank), get_bank_password(bank))
+        try:
+            print("Connecting to {}...".format(bank.title))
+            username = get_bank_username(bank)
+            password = get_bank_password(bank)
+            bank.update(session, username, password)
+
+        except banking.LoginError as error:
+            try:
+                print('Unable to login to {}.'.format(bank.title))
+                print('User name: {}   Password: {}   (Ctrl-C to clear)'.\
+                        format(username, password)[:79], end='')
+                input()
+
+            except (KeyboardInterrupt, EOFError):
+                print('\r' + 79 * ' ')
+
+def setup_allowance(session, account, arguments):
+    if arguments.savings:
+        return
+
+    try:
+        # Ask the user to specify a new allowance
+
+        header = "Please provide an allowance for this account."
+        prompt = "Allowance: "
+
+        if arguments.allowance is None: input = None
+        else: input = str.join(' ', arguments.allowance)
+
+        value, frequency = setup_budget(header, prompt, input)
+
+        # Cancel all of the existing allowances for this account.
+
+        for allowance in account.allowances:
+            allowance.cancel(session)
+
+        # Create the allowance specified by the user.
+
+        allowance = budget.Allowance(account, value, frequency)
+        session.add(allowance)
+
+    except DontMakeBudget:
+        pass
+
+def setup_savings(arguments):
+    header = "Please provide a savings budget:"
+    prompt = "Budget: "
+
+    try:
+        value, frequency = setup_budget(header, prompt, arguments.budget)
+        savings = Savings(value, frequency)
+        session.add(savings)
+
+    except DontMakeBudget:
+        pass
+
+def setup_budget(header, prompt, initial_input=None):
+
+    class TabCompleter:
+
+        def __call__(self, prefix, index):
+            frequencies = 'daily', 'monthly', 'yearly'
+            results = [x for x in frequencies if x.startswith(prefix)]
+            try: return results[index]
+            except IndexError: return None
+
+
+    readline.parse_and_bind('tab: complete')
+    readline.set_completer(TabCompleter())
+
+    first_iteration = True
+    first_prompt = True
+
+    while True:
+
+        # Ask the user for a budget.
+
+        if first_iteration and initial_input is not None:
+            command = initial_input
+        else:
+            if first_prompt: print(header)
+            command = input(prompt); first_prompt = False
+
+        first_iteration = False
+
+        # If no input is given, don't create a budget.
+
+        if not command:
+            raise DontMakeBudget
+
+        # Make sure the requested budget is legal.
+
+        try:
+            return budget.parse_budget(command)
+        except ValueError:
+            message = "Input '{}' not understood.  "
+            message += "Expecting: '<value> <frequency>'"
+            print(message.format(command))
 
 def assign_receipts(session):
     receipts = budget.get_new_receipts(session)
@@ -402,17 +554,6 @@ def assign_to_accounts(session, value):
         return processed_accounts
 
 
-def handle_login_error(error):
-    try:
-        print('Unable to login to {}.'.format(self.bank))
-        print('User name: {}   Password: {}   (Ctrl-C to clear)'.\
-                format(self.username, self.password)[:79], end='')
-        input()
-
-    except (KeyboardInterrupt, EOFError):
-        print('\r' + 79 * ' ')
-
-
 class SkipTransaction (Exception):
     pass
 
@@ -425,19 +566,15 @@ class IgnoreTransaction (SkipTransaction):
 class IgnoreAllTransactions (SkipAllTransactions):
     pass
 
+class DontMakeBudget (Exception):
+    pass
+
+
+def main():
+    argcomplete.autocomplete(parser)
+    arguments = parser.parse_args()
+    arguments.command(arguments)
 
 if __name__ == '__main__':
-    try:
-        argcomplete.autocomplete(parser)
-        arguments = parser.parse_args()
-        arguments.command(arguments)
-
-    except budget.NoAccounts as error:
-        print("No accounts found.  Add an account using 'budget add'.")
-
-    except budget.NoBanks as error:
-        print("No banks found.  Add a bank using 'budget add-bank'.")
-
-    except banking.LoginError as error:
-        handle_login_error(error)
+    main()
 
