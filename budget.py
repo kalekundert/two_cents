@@ -49,6 +49,9 @@ class Frequency:
         self.validate(frequency)
         self.frequency = frequency
 
+    def __str__(self):
+        return self.frequency
+
     @staticmethod
     def validate(frequency):
         if frequency not in ('daily', 'monthly', 'yearly'):
@@ -140,7 +143,12 @@ class Allowance (Base):
         self.date_canceled = None
 
     def __repr__(self):
-        return '<budget id={} account={} value={} {}>'.format(
+        if self.date_canceled is not None:
+            template = '<allowance id={} account={} value="{} {}">'
+        else:
+            template = '<canceled-allowance id={} account={} value="{} {}">'
+
+        return template.format(
                 self.id, self.account.id,
                 self.update_value, self.update_frequency)
 
@@ -158,9 +166,10 @@ class Allowance (Base):
         session.add(self.account)
 
     def cancel(self, session):
-        self.update()
-        self.date_canceled = today()
-        assert self.last_update == self.date_canceled
+        if self.date_canceled is None:
+            self.update(session)
+            self.date_canceled = today()
+            assert self.last_updated == self.date_canceled
 
 
 class Transfer (Base):

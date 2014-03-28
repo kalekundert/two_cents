@@ -89,7 +89,7 @@ class ModifyAllowance:
 
     @staticmethod   # (no fold)
     def run(session, arguments):
-        account = require_account(arguments.name)
+        account = require_account(session, arguments.name)
         setup_allowance(session, account, arguments)
 
 @command
@@ -292,6 +292,13 @@ def update_banks(session):
 
 def setup_allowance(session, account, arguments):
     if arguments.savings:
+        # Cancel all of the existing allowances for this account.
+
+        for allowance in account.allowances:
+            allowance.cancel(session)
+
+        # Carry on without asking the user anything.
+
         return
 
     try:

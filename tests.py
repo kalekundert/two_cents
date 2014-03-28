@@ -8,12 +8,43 @@ from contextlib import contextmanager
 
 test_db = 'test.db'
 
-def run_subcommand(arguments, 
-        stdin=None, wipe=True, days_ago=None, months_ago=None, years_ago=None):
+def run_subcommand(arguments, stdin=None, wipe=True, **kwargs):
+    import os, sys, shlex
+    try:
+        # Setup an artificial environment to run the command in.
+        real_stdin = sys.stdin
+        sys.stdin = io.StringIO(stdin)
+        if wipe: wipe_database()
 
-    import os, sys, datetime, shlex
+        # Run the command.
+        command = './cli.py --database {} {}'.format(test_db, arguments)
+        print(command)
+        sys.argv = shlex.split(command)
+        with change_date(**kwargs): cli.main()
+        if stdin is not None: print(stdin, end='')
 
-    # Specify when the subcommand should pretend to run.
+    finally:
+        # Clean up the artificial environment.
+        sys.stdin = real_stdin
+
+@contextmanager
+def open_test_db(**kwargs):
+    import os, os.path
+
+    assert os.path.exists(test_db), \
+            "The database '{}' was not successfully created.".format(test_db)
+
+    with change_date(**kwargs):
+        with budget.open_db(test_db) as session:
+            yield session
+
+    assert os.path.exists(test_db), \
+            "The database '{}' was unexpectedly destroyed".format(test_db)
+
+@contextmanager
+def change_date(days_ago=None, months_ago=None, years_ago=None):
+    import datetime
+
     today = datetime.date.today()
     fake_date = datetime.date.today()
 
@@ -37,44 +68,21 @@ def run_subcommand(arguments,
         assert not months_ago and not years_ago
         fake_date = today - datetime.timedelta(days_ago)
 
-    try:
-        # Setup an artificial environment to run the command in.
-        budget.today = lambda: fake_date
-        real_stdin = sys.stdin
-        sys.stdin = io.StringIO(stdin)
-        if wipe: wipe_database()
+    budget.today = lambda: fake_date
+    yield
+    budget.today = lambda: datetime.date.today()
 
-        # Run the command.
-        command = './cli.py --database {} {}'.format(test_db, arguments)
-        print(command)
-        sys.argv = shlex.split(command)
-        cli.main()
-        if stdin is not None: print(stdin, end='')
-
-    finally:
-        # Clean up the artificial environment.
-        budget.today = lambda: datetime.date.today()
-        sys.stdin = real_stdin
-
-@contextmanager
-def open_test_db():
-    import os, os.path
-
-    assert os.path.exists(test_db), \
-            "The database '{}' was not successfully created.".format(test_db)
-
-    with budget.open_db(test_db) as session:
-        yield session
-
-    assert os.path.exists(test_db), \
-            "The database '{}' was unexpectedly destroyed".format(test_db)
-
-    os.remove(test_db)
-
+@testing.setup
 def wipe_database():
     import os
     with open(test_db, 'w'):
         os.utime(test_db, None)
+
+@testing.teardown
+def remove_database():
+    import os
+    if os.path.exists(test_db):
+        os.remove(test_db)
 
 
 @testing.test
@@ -94,8 +102,6 @@ def test_utility_functions():
 def test_add_account():
 
     # Make sure that no accounts can be found initially.
-
-    wipe_database()
 
     with open_test_db() as session:
         assert budget.get_num_accounts(session) == 0
@@ -181,12 +187,27 @@ def test_add_account_allowances():
         account = budget.get_account(session, 'groceries')
         assert account.value == 20000
 
+    # Create several allowances at once.
+
+    run_subcommand('add groceries --allowance 3 daily', days_ago=10)
+    run_subcommand('add restaurants --allowance 2 daily', days_ago=10, wipe=False)
+    run_subcommand('add miscellaneous --allowance 1 daily', days_ago=10, wipe=False)
+
+    with open_test_db() as session:
+        budget.update_accounts(session)
+
+        groceries = budget.get_account(session, 'groceries')
+        restaurants = budget.get_account(session, 'restaurants')
+        miscellaneous = budget.get_account(session, 'miscellaneous')
+
+        assert groceries.value == 3000
+        assert restaurants.value == 2000
+        assert miscellaneous.value == 1000
+
 @testing.test
 def test_add_bank():
 
     # Make sure that no banks are found initially.
-
-    wipe_database()
 
     with open_test_db() as session:
         assert budget.get_num_banks(session) == 0
@@ -206,14 +227,53 @@ def test_add_bank():
         assert bank.username == 'username'
         assert bank.password == 'password'
 
-
 def test_modify_account():
     pass
 
+@testing.test
 def test_modify_account_allowances():
-    # Set an allowance, change it several times, and makes sure the account 
-    # value is correct in the end.
-    pass
+    # Setup an initial allowance.  Make a few extra accounts to confuse things.
+
+    run_subcommand('add groceries --allowance 3 daily', days_ago=40)
+
+    with open_test_db(days_ago=30) as session:
+        budget.update_accounts(session)
+        account = budget.get_account(session, 'groceries')
+        assert account.value == 3000
+
+    # Test modifying the allowance.
+
+    run_subcommand(
+            'modify-allowance groceries --allowance 2 daily',
+            days_ago=30, wipe=False)
+
+    with open_test_db(days_ago=20) as session:
+        budget.update_accounts(session)
+        account = budget.get_account(session, 'groceries')
+        assert account.value == 5000
+
+    # Test modifying the allowance again.
+
+    run_subcommand(
+            'modify-allowance groceries --allowance 1 daily',
+            days_ago=20, wipe=False)
+
+    with open_test_db(days_ago=10) as session:
+        budget.update_accounts(session)
+        account = budget.get_account(session, 'groceries')
+        assert account.value == 6000
+
+    # Test turning off the allowance altogether.
+
+    run_subcommand(
+            'modify-allowance groceries --savings',
+            days_ago=10, wipe=False)
+
+    with open_test_db(days_ago=0) as session:
+        budget.update_accounts(session)
+        account = budget.get_account(session, 'groceries')
+        print(account.value)
+        assert account.value == 6000
 
 
 if __name__ == '__main__':
