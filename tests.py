@@ -106,16 +106,16 @@ def test_add_account():
     with open_test_db() as session:
         assert budget.get_num_accounts(session) == 0
 
-    # Create a new account without an allowance (command-line interface).
+    # Create a new account.
 
-    run_subcommand('add groceries --savings')
+    run_subcommand('add groceries')
 
     # Make sure the same account can't be created twice.
 
-    with muffler.Muffler() as output:
+    with muffler.Muffler() as transcript:
         with testing.expect(SystemExit):
             run_subcommand('add groceries', wipe=False)
-        assert "Account 'groceries' already exists." in output, output
+        assert "Account 'groceries' already exists." in transcript
 
     # Make sure all the right properties were saved.
 
@@ -133,23 +133,14 @@ def test_add_account():
 @testing.test
 def test_add_account_allowances():
 
-    # Forgo an allowance using the command-line interface.
-
-    run_subcommand('add groceries --savings', days_ago=5)
-
-    with open_test_db() as session:
-        budget.update_accounts(session)
-        account = budget.get_account(session, 'groceries')
-        assert account.value == 0
-
     # Forgo an allowance using the interactive interface.
 
-    run_subcommand('add groceries', days_ago=5, stdin='\n')
+    run_subcommand('add groceries --allowance', days_ago=5, stdin='cancel\n')
 
     with open_test_db() as session:
         budget.update_accounts(session)
         account = budget.get_account(session, 'groceries')
-        assert account.value == 0
+        assert account.value == 0, account.value
 
     # Create a daily allowance using the command-line interface.
 
@@ -158,16 +149,16 @@ def test_add_account_allowances():
     with open_test_db() as session:
         budget.update_accounts(session)
         account = budget.get_account(session, 'groceries')
-        assert account.value == 2500
+        assert account.value == 2500, account.value
 
     # Create a daily allowance using the interactive interface.
 
-    run_subcommand('add groceries', days_ago=5, stdin='5 daily\n')
+    run_subcommand('add groceries --allowance', days_ago=5, stdin='5 daily\n')
 
     with open_test_db() as session:
         budget.update_accounts(session)
         account = budget.get_account(session, 'groceries')
-        assert account.value == 2500
+        assert account.value == 2500, account.value
 
     # Create a monthly allowance.
 
@@ -176,7 +167,7 @@ def test_add_account_allowances():
     with open_test_db() as session:
         budget.update_accounts(session)
         account = budget.get_account(session, 'groceries')
-        assert account.value == 30000
+        assert account.value == 30000, account.value
 
     # Create a yearly allowance.
 
@@ -185,7 +176,7 @@ def test_add_account_allowances():
     with open_test_db() as session:
         budget.update_accounts(session)
         account = budget.get_account(session, 'groceries')
-        assert account.value == 20000
+        assert account.value == 20000, account.value
 
     # Create several allowances at once.
 
@@ -200,9 +191,9 @@ def test_add_account_allowances():
         restaurants = budget.get_account(session, 'restaurants')
         miscellaneous = budget.get_account(session, 'miscellaneous')
 
-        assert groceries.value == 3000
-        assert restaurants.value == 2000
-        assert miscellaneous.value == 1000
+        assert groceries.value == 3000, groceries.value
+        assert restaurants.value == 2000, restaurants.value
+        assert miscellaneous.value == 1000, miscellaneous.value
 
 @testing.test
 def test_add_bank():
@@ -227,12 +218,23 @@ def test_add_bank():
         assert bank.username == 'username'
         assert bank.password == 'password'
 
-def test_modify_account():
+def test_add_savings():
     pass
+
+def test_rename_account():
+    run_subcommand('add groceries')
+
+    # Make sure the same account can't be created twice.
+
+    with muffler.Muffler() as output:
+        with testing.expect(SystemExit):
+            run_subcommand('add groceries', wipe=False)
+        assert "Account 'groceries' already exists." in output, output
 
 @testing.test
 def test_modify_account_allowances():
-    # Setup an initial allowance.  Make a few extra accounts to confuse things.
+    
+    # Setup an initial allowance.
 
     run_subcommand('add groceries --allowance 3 daily', days_ago=40)
 
@@ -244,7 +246,7 @@ def test_modify_account_allowances():
     # Test modifying the allowance.
 
     run_subcommand(
-            'modify-allowance groceries --allowance 2 daily',
+            'modify-account groceries --allowance 2 daily',
             days_ago=30, wipe=False)
 
     with open_test_db(days_ago=20) as session:
@@ -255,7 +257,7 @@ def test_modify_account_allowances():
     # Test modifying the allowance again.
 
     run_subcommand(
-            'modify-allowance groceries --allowance 1 daily',
+            'modify-account groceries --allowance 1 daily',
             days_ago=20, wipe=False)
 
     with open_test_db(days_ago=10) as session:
@@ -266,7 +268,7 @@ def test_modify_account_allowances():
     # Test turning off the allowance altogether.
 
     run_subcommand(
-            'modify-allowance groceries --savings',
+            'modify-account groceries --allowance none',
             days_ago=10, wipe=False)
 
     with open_test_db(days_ago=0) as session:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import sys, argparse, argcomplete, readline
+import sys, argparse, readline
 import budget, banking
 from pprint import pprint
 
@@ -37,24 +37,21 @@ def command(*args):
     else:
         return functools.partial(decorator, parsers=args)
 
-def setup_allowance_arguments(parser):
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument('--allowance', '-a', nargs=2)
-    group.add_argument('--savings', '-s', action='store_true')
-
 
 @command
 class AddAccount:
     parser = subparsers.add_parser('add')
     parser.add_argument('name')
-    setup_allowance_arguments(parser)
+    parser.add_argument('--target', '-t')
+    parser.add_argument('--allowance', '-a', nargs='*')
     
     @staticmethod   # (no fold)
     def run(session, arguments):
         require_no_account(session, arguments.name)
         account = budget.Account(arguments.name)
         session.add(account)
-        setup_allowance(session, account, arguments)
+        setup_target(session, account, arguments.target)
+        setup_allowance(session, account, arguments.allowance)
 
 @command
 class AddBank:
@@ -82,15 +79,17 @@ class MakeTransfer:
     pass
 
 @command
-class ModifyAllowance:
-    parser = subparsers.add_parser('modify-allowance')
+class ModifyAccount:
+    parser = subparsers.add_parser('modify-account')
     parser.add_argument('name')
-    setup_allowance_arguments(parser)
+    parser.add_argument('--target', '-t')
+    parser.add_argument('--allowance', '-a', nargs='*')
 
     @staticmethod   # (no fold)
     def run(session, arguments):
         account = require_account(session, arguments.name)
-        setup_allowance(session, account, arguments)
+        setup_target(session, account, arguments.target)
+        setup_allowance(session, account, arguments.allowance)
 
 @command
 class ModifyBank:
@@ -142,7 +141,6 @@ class RenameAccount:
     parser = subparsers.add_parser('rename')
     parser.add_argument('old-name')
     parser.add_argument('new-name')
-    setup_allowance_arguments(parser)
 
     @staticmethod   # (no fold)
     def run(session, arguments):
@@ -290,40 +288,38 @@ def update_banks(session):
             except (KeyboardInterrupt, EOFError):
                 print('\r' + 79 * ' ')
 
-def setup_allowance(session, account, arguments):
-    if arguments.savings:
-        # Cancel all of the existing allowances for this account.
+def setup_target(session, account, target):
+    if target is None: return
+    account.target = budget.to_cents(target)
 
-        for allowance in account.allowances:
-            allowance.cancel(session)
+def setup_allowance(session, account, command):
+    # The command argument has a lot of meaning and needs some parsing.  The 
+    # reason is that this argument is meant to come from the command-line, and 
+    # in order to keep the command-line interface concise, a lot of meaning was 
+    # crammed into a single argument.  The following table summarizes how the 
+    # command argument is parsed:
+    #
+    # Command Line         Value           Meaning
+    # ===================  ==============  ====================================
+    #                      None            Don't change allowances.
+    # --allowance          []              Prompt for allowance interactively.
+    # --allowance 5 daily  ['5', 'daily']  Set allowance to '5 daily'.
 
-        # Carry on without asking the user anything.
-
-        return
+    if command is None: return
+    if isinstance(command, list): command = str.join(' ', command)
 
     try:
-        # Ask the user to specify a new allowance
-
         header = "Please provide an allowance for this account."
         prompt = "Allowance: "
 
-        if arguments.allowance is None: input = None
-        else: input = str.join(' ', arguments.allowance)
-
-        value, frequency = setup_budget(header, prompt, input)
-
-        # Cancel all of the existing allowances for this account.
-
-        for allowance in account.allowances:
-            allowance.cancel(session)
-
-        # Create the allowance specified by the user.
-
-        allowance = budget.Allowance(account, value, frequency)
-        session.add(allowance)
+        value, frequency = setup_budget(header, prompt, command)
+        account.setup_allowance(session, value, frequency)
 
     except DontMakeBudget:
         pass
+
+    except CancelBudget:
+        account.cancel_allowance(session)
 
 def setup_savings(arguments):
     header = "Please provide a savings budget:"
@@ -337,7 +333,7 @@ def setup_savings(arguments):
     except DontMakeBudget:
         pass
 
-def setup_budget(header, prompt, initial_input=None):
+def setup_budget(header, prompt, initial_command=None):
 
     class TabCompleter:
 
@@ -354,31 +350,36 @@ def setup_budget(header, prompt, initial_input=None):
     first_iteration = True
     first_prompt = True
 
-    while True:
+    try:
+        while True:
 
-        # Ask the user for a budget.
+            # Ask the user for a budget.
 
-        if first_iteration and initial_input is not None:
-            command = initial_input
-        else:
-            if first_prompt: print(header)
-            command = input(prompt); first_prompt = False
+            if first_iteration and initial_command:
+                command = initial_command
+            else:
+                if first_prompt: print(header)
+                command = input(prompt).lower(); first_prompt = False
 
-        first_iteration = False
+            first_iteration = False
 
-        # If no input is given, don't create a budget.
+            # Look for special commands to remove the budget.
 
-        if not command:
-            raise DontMakeBudget
+            if command in ('cancel', 'none', '0'):
+                raise CancelBudget
 
-        # Make sure the requested budget is legal.
+            # Make sure the requested budget is legal.
 
-        try:
-            return budget.parse_budget(command)
-        except ValueError:
-            message = "Input '{}' not understood.  "
-            message += "Expecting: '<value> <frequency>'"
-            print(message.format(command))
+            try:
+                return budget.parse_budget(command)
+            except ValueError:
+                message = "Input '{}' not understood.  "
+                message += "Expecting: '<value> <frequency>'"
+                print(message.format(command))
+                print("(Press Ctrl-C to cancel)")
+
+    except KeyboardInterrupt:
+        raise DontChangeBudget
 
 def assign_receipts(session):
     receipts = budget.get_new_receipts(session)
@@ -573,12 +574,14 @@ class IgnoreTransaction (SkipTransaction):
 class IgnoreAllTransactions (SkipAllTransactions):
     pass
 
+class CancelBudget (Exception):
+    pass
+
 class DontMakeBudget (Exception):
     pass
 
 
 def main():
-    argcomplete.autocomplete(parser)
     arguments = parser.parse_args()
     arguments.command(arguments)
 

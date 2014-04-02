@@ -81,10 +81,10 @@ class Account (Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False, unique=True)
     value = Column(Cents, nullable=False)
+    target = Column(Cents)
 
     payments = relationship('Payment', backref='account')
     allowances = relationship('Allowance', backref='account')
-
     transfers_in = relationship('Transfer', backref='payee',
             primaryjoin='Account.id == Transfer.payee_id')
     transfers_out = relationship('Transfer', backref='payer',
@@ -103,6 +103,15 @@ class Account (Base):
     def update(self, session):
         for allowance in self.allowances:
             allowance.update(session)
+
+    def setup_allowance(self, session, value, frequency):
+        self.cancel_allowance(session)
+        new_allowance = Allowance(self, value, frequency)
+        session.add(new_allowance)
+
+    def cancel_allowance(self, session):
+        for old_allowance in self.allowances:
+            old_allowance.cancel(session)
 
 
 class Payment (Base):
