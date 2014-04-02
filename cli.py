@@ -39,7 +39,7 @@ def command(*args):
 
 
 @command
-class AddAccount:
+class AddAccount:   # (tested)
     parser = subparsers.add_parser('add')
     parser.add_argument('name')
     parser.add_argument('--target', '-t')
@@ -54,7 +54,7 @@ class AddAccount:
         setup_allowance(session, account, arguments.allowance)
 
 @command
-class AddBank:
+class AddBank:   # (untestable)
     parser = subparsers.add_parser('add-bank')
     parser.add_argument('bank', choices=budget.get_known_bank_names())
     parser.add_argument('--username', '-u')
@@ -79,7 +79,7 @@ class MakeTransfer:
     pass
 
 @command
-class ModifyAccount:
+class ModifyAccount:   # (tested)
     parser = subparsers.add_parser('modify-account')
     parser.add_argument('name')
     parser.add_argument('--target', '-t')
@@ -92,7 +92,7 @@ class ModifyAccount:
         setup_allowance(session, account, arguments.allowance)
 
 @command
-class ModifyBank:
+class ModifyBank:   # (untestable)
     parser = subparsers.add_parser('modify-bank')
     parser.add_argument('bank', choices=budget.get_known_bank_names())
     parser.add_argument('--username', '-u')
@@ -114,17 +114,17 @@ class ModifySavings:
     pass
 
 @command
-class RemoveAccount:
-    parser = subparsers.add_parser('config')
+class RemoveAccount:   # (tested)
+    parser = subparsers.add_parser('remove')
     parser.add_argument('account')
 
     @staticmethod   # (no fold)
     def run(session, arguments):
-        account = require_ccount(session, arguments.account)
+        account = require_account(session, arguments.account)
         session.delete(account)
 
 @command
-class RemoveBank:
+class RemoveBank:   # (untestable)
     parser = subparsers.add_parser('remove-bank')
     parser.add_argument('bank', choices=budget.get_known_bank_names())
 
@@ -137,10 +137,10 @@ class RemoveBank:
             print("Bank '{0}' not found.".format(arguments.bank))
 
 @command
-class RenameAccount:
+class RenameAccount:   # (tested)
     parser = subparsers.add_parser('rename')
-    parser.add_argument('old-name')
-    parser.add_argument('new-name')
+    parser.add_argument('old_name')
+    parser.add_argument('new_name')
 
     @staticmethod   # (no fold)
     def run(session, arguments):
@@ -168,7 +168,7 @@ class ShowAccounts:
             account.show()
 
 @command
-class ShowBanks:
+class ShowBanks:   # (untestable)
     parser = subparsers.add_parser('show-banks')
 
     @staticmethod   # (no fold)
@@ -197,7 +197,7 @@ class UpdateAccounts:
         update_accounts(session)
 
 @command
-class UpdateBanks:
+class UpdateBanks:   # (untestable)
     parser = subparsers.add_parser('update-banks')
 
     @staticmethod   # (no fold)

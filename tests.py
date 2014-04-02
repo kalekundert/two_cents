@@ -131,7 +131,16 @@ def test_add_account():
         assert account.value == 0
 
 @testing.test
-def test_add_account_allowances():
+def test_add_account_with_target():
+    run_subcommand('add racquet --target 100')
+
+    with open_test_db() as session:
+        budget.update_accounts(session)
+        account = budget.get_account(session, 'racquet')
+        assert account.target == 10000, account.target
+
+@testing.test
+def test_add_account_with_allowance():
 
     # Forgo an allowance using the interactive interface.
 
@@ -221,18 +230,46 @@ def test_add_bank():
 def test_add_savings():
     pass
 
-def test_rename_account():
-    run_subcommand('add groceries')
+@testing.test
+def test_remove_account():
+    run_subcommand('add racquet')
+    run_subcommand('remove racquet', wipe=False)
 
-    # Make sure the same account can't be created twice.
-
-    with muffler.Muffler() as output:
-        with testing.expect(SystemExit):
-            run_subcommand('add groceries', wipe=False)
-        assert "Account 'groceries' already exists." in output, output
+    with open_test_db() as session:
+        assert not budget.account_exists(session, 'racquet')
 
 @testing.test
-def test_modify_account_allowances():
+def test_rename_account():
+    run_subcommand('add foodstuff')
+    run_subcommand('rename foodstuff groceries', wipe=False)
+
+    with open_test_db() as session:
+        assert budget.account_exists(session, 'groceries')
+        assert not budget.account_exists(session, 'foodstuff')
+
+@testing.test
+def test_modify_account_target():
+
+    # Setup an initial target.
+
+    run_subcommand('add racquet --target 100')
+
+    with open_test_db() as session:
+        budget.update_accounts(session)
+        account = budget.get_account(session, 'racquet')
+        assert account.target == 10000, account.target
+
+    # Test modifying the target.
+
+    run_subcommand('add racquet --target 150')
+
+    with open_test_db() as session:
+        budget.update_accounts(session)
+        account = budget.get_account(session, 'racquet')
+        assert account.target == 15000, account.target
+
+@testing.test
+def test_modify_account_allowance():
     
     # Setup an initial allowance.
 
