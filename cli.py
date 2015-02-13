@@ -72,8 +72,14 @@ class AddBank:   # (untestable)
         bank = budget.Bank(arguments.bank, username, password)
         session.add(bank)
 
+@command
 class AddSavings:
-    pass
+    parser = subparsers.add_parser('add-savings')
+    parser.add_argument('schedule', nargs='*')
+    
+    @staticmethod   # (no fold)
+    def run(session, arguments):
+        setup_savings(session, arguments.schedule)
 
 class MakeTransfer:
     pass
@@ -111,6 +117,9 @@ class ModifyBank:   # (untestable)
         session.add(bank)
 
 class ModifySavings:
+    # Print all savings, with numbers, so the use can select one.
+    # Prompt the user for a new frequency.
+    # Ask if the user is done.  Break if so, keep going if not.
     pass
 
 @command
@@ -186,15 +195,6 @@ class ShowBanks:   # (untestable)
             title = bank.title
             date = bank.last_update.strftime('%m/%d/%Y')
             print(row.format(title, date))
-
-@command
-class UpdateAccounts:
-    parser = subparsers.add_parser('update')
-
-    @staticmethod   # (no fold)
-    def run(session, arguments):
-        require_any_accounts(session)
-        update_accounts(session)
 
 @command
 class UpdateBanks:   # (untestable)
@@ -321,16 +321,28 @@ def setup_allowance(session, account, command):
     except CancelBudget:
         account.cancel_allowance(session)
 
-def setup_savings(arguments):
+def setup_savings(session, command):
+    # The command argument has a lot of meaning and needs some parsing.  The 
+    # reason is that this argument is meant to come from the command-line, and 
+    # in order to keep the command-line interface concise, a lot of meaning was 
+    # crammed into a single argument.  The following table summarizes how the 
+    # command argument is parsed:
+    #
+    # Command Line    Value                Meaning
+    # ==============  ===================  ====================================
+    #                 []                   Prompt for allowance interactively.
+    # 150 monthly     ['150', 'monthly']   Set allowance to '150 monthly'.
+
     header = "Please provide a savings budget:"
     prompt = "Budget: "
 
     try:
-        value, frequency = setup_budget(header, prompt, arguments.budget)
-        savings = Savings(value, frequency)
+        command = str.join(' ', command)
+        value, frequency = setup_budget(header, prompt, command)
+        savings = budget.Savings(value, frequency)
         session.add(savings)
 
-    except DontMakeBudget:
+    except (DontMakeBudget, CancelBudget):
         pass
 
 def setup_budget(header, prompt, initial_command=None):
@@ -435,6 +447,10 @@ def assign_receipts(session):
 
 def assign_savings(session):
     print("Savings not yet supported.")
+
+    savings = budget.get_savings(session)
+    
+
 
 def assign_to_accounts(session, value):
     import re

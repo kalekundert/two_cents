@@ -214,9 +214,6 @@ class Savings (Base):
         return '<savings id={} value={} {}>'.format(
                 self.id, self.update_value, self.update_frequency)
 
-    def update(self):
-        pass
-
 
 class SavingsPayment (Payment):
     __tablename__ = 'savings_payments'
@@ -394,9 +391,6 @@ def open_db(path=None):
 def update_accounts(session):
     for account in get_accounts(session):
         account.update(session)
-
-    for savings in get_savings(session):
-        savings.update(session)
 
 def get_account(session, name):
     try:

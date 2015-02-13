@@ -228,7 +228,38 @@ def test_add_bank():
         assert bank.password == 'password'
 
 def test_add_savings():
-    pass
+
+    # Setup a savings budget and a few accounts.
+
+    run_command('add-savings 150 monthly', months_ago=3)
+    run_command('add racquet', wipe=False)
+    run_command('add laptop', wipe=False)
+
+    # Assign the savings to the accounts.
+
+    with muffler.Muffler() as transcript:
+        assignment = '100 racquet, 350 laptop\n'
+        run_command('show --fast', stdin=assignment, wipe=False)
+        assert 'ssdfsdf' in transcript
+        assert 'sdfksdl' in transcript
+
+    # Make sure the accounts have the right values.
+
+    with open_test_db() as session:
+        racquet = budget.get_account(session, 'racquet')
+        laptop = budget.get_account(session, 'laptop')
+        assert racquet.value == 10000, racquet.value
+        assert laptop.value == 35000, laptop.value
+
+    # Test scenarios
+    # ==============
+    # Simple test: one account, everything assigned to it.
+    # Partial assignment of savings.
+    #
+    # Things to do
+    # ============
+    # Write cli.assign_savings()
+    # Write ShowAccounts
 
 @testing.test
 def test_remove_account():
