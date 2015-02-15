@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+
+"""\
+Maintain a budget that updates every day.
+
+Usage:
+    budget [-D]
+    budget add-bank <name> [-u <command>] [-p <command>]
+    budget add-budget <name> [-b <dollars>] [-a <dollars-per-time>]
+
+Options:
+  -D --no-download
+        Don't download new transactions from the bank.  This can be a slow 
+        step, so you may want to skip it if you know nothing new has happened.
+
+  -u --username-cmd <command>
+        When adding a new bank, use this option to specify a command that can 
+        be used to get your username.  You will be prompted for one if this 
+        option isn't specified.
+
+  -p --password-cmd <command>
+        When adding a new bank, use this option to specify a command that can 
+        be used to get your password.  You will be prompted for one if this 
+        option isn't specified.
+
+  -b --initial-balance <dollars>
+        When adding a new budget, specify how much money should start off in 
+        the budget.
+
+  -a --initial-allowance <dollars-per-time>
+        When adding a new budget, specify how quickly money should accumulate 
+        in that account.
+"""
+
+import budget
+
+def update_budget(download=True):
+    with budget.open_db() as session:
+        if download:
+            budget.download_payments(session,
+                    prompt_for_username, prompt_for_password)
+
+        budget.update_allowances(session)
+        assign_payments(session)
+        display_accounts(session)
+
+def add_bank(scraper_key, username_cmd=None, password_cmd=None):
+    if budget.bank_exists(session, scraper_key):
+        print("Bank '{}' already exists.".format(arguments.bank))
+        return
+
+    if not username_cmd and not password_cmd:
+        print("""\
+Enter username and password commands.  You don't need to provide either 
+command, but if you don't you'll have to provide the missing fields every time 
+you download financial data from this bank.""")
+        print()
+        username_cmd = input("Username: ")
+        password_cmd = input("Password: ")
+
+    elif not username:
+        print("""\
+Enter a username command.  If no command is given, you'll be prompted for a 
+username every time you download financial data from this bank.""")
+        print()
+        username_cmd = input("Username: ")
+
+    elif not password:
+        print("""\
+Enter a password command.  If no command is given, you'll be prompted for a 
+password every time you download financial data from this bank.""")
+        print()
+        password_cmd = input("Password: ")
+
+    with budget.open_db() as session:
+        bank = budget.Bank(scraper_key, username_cmd, password_cmd)
+        session.add(bank)
+
+def add_budget(name, initial_balance, initial_allowance):
+    with budget.open_db() as session:
+        bank = budget.Bank(name, initial_balance, initial_allowance)
+        session.add(bank)
+
+
+def assign_payments(session):
+    import readline
+
+    # Handle the receipts using a simple state machine.  This architecture 
+    # facilitates commands like 'skip all' and 'ignore all'.
+
+    class ReadEvalPrintLoop:
+
+        def __init__(self):
+            self.handle = self.default_handler
+
+        def go(self, session):
+            payments = budget.get_unassigned_payments(session)
+
+            if not payments:
+                return
+
+            elif len(receipts) == 1:
+                print("Please assign the following transaction to an account:")
+                print()
+
+            else:
+                print("Please assign the following transactions to accounts:")
+                print()
+
+            for payment in payments:
+                self.handle(payment)
+
+        def default_handler(self, payment):
+            payment.show(indent='  ')
+            print()
+
+            while True:
+                
+                # Prompt the user for an assignment.
+
+                command = input("Account: ")
+
+                # See if the user wants to skip assigning one or more payments 
+                # and come back to them later.
+
+                if not command or command == 'skip':
+                    break
+
+                if command == 'skip all':
+                    self.handle = self.null_handler
+                    break
+
+                # See if the user wants to ignore one or more payments.  These 
+                # payments will be permanently excluded from the budget.
+
+                if command == 'ignore':
+                    payment.ignore()
+                    break
+
+                if command == 'ignore all':
+                    payment.ignore()
+                    self.handle = self.ignore_handler
+                    break
+
+                # Attempt to assign the payment to the specified accounts.  If 
+                # the input can't be parsed, print an error and ask again.
+
+                try:
+                    payment.assign(command)
+                    break
+
+                except AssignmentError as error:
+                    print(error.raw_message)
+                    receipt.assign(session, accounts)
+
+        def ignore_handler(self, payment):
+            payment.ignore()
+
+        def null_handler(self, payment):
+            pass
+
+    class TabCompleter:
+
+        def __init__(self, session):
+            self.accounts = budget.get_accounts(session)
+            self.commands = [x.name for x in self.accounts]
+            self.commands += ['skip', 'ignore', 'all']
+            self.commands.sort()
+
+        def __call__(self, prefix, index):
+            results = [x for x in self.commands if x.startswith(prefix)]
+            try: return results[index]
+            except IndexError: return None
+
+
+    readline.parse_and_bind('tab: complete')
+    readline.set_completer(TabCompleter(session))
+
+    loop = ReadEvalPrintLoop()
+    loop.go(session)
+
+def display_accounts(session):
+    """
+    Print a line briefly summarizing each account.
+    """
+    for account in budget.get_accounts(session):
+        account.show()
+
+def prompt_for_username(bank):
+    return input("Username for {}: ".format(bank))
+
+def prompt_for_password(bank):
+    return getpass.getpass("Password for {}: ".format(bank))
+
+    
+if __name__ == '__main__':
+    import docopt
+    args = docopt.docopt(__doc__)
+
+    if args['add-bank']:
+        add_bank(
+                scraper_key=args['<name>'],
+                username_cmd=args['--username-cmd'],
+                password_cmd=args['--password-cmd'],
+        )
+
+    elif args['add-budget']:
+        add_budget(
+                name=args['<name>'],
+                initial_balance=args['--initial-balance'],
+                initial_allowance=args['--initial-allowance'],
+        )
+
+    else:
+        update_budget(
+                download=not args['--no-download'],
+        )
+

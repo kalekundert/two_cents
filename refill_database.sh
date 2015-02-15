@@ -1,9 +1,9 @@
 #!/usr/bin/env sh
 
-./cli.py add-bank wells-fargo       \
+./budget add-bank WellsFargo        \
     -u 'abraxas -Nq wells-fargo'    \
     -p 'abraxas -Pq wells-fargo'
-./cli.py add groceries
-./cli.py add restaurants
-./cli.py add miscellaneous
+./budget add-budget groceries
+./budget add-budget restaurants
+./budget add-budget miscellaneous
 
