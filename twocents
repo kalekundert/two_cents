@@ -4,9 +4,9 @@
 Maintain a budget that updates every day.
 
 Usage:
-    budget [-D]
-    budget add-bank <name> [-u <command>] [-p <command>]
-    budget add-budget <name> [-b <dollars>] [-a <dollars-per-time>]
+    two_cents [-D]
+    two_cents add-bank <name> [-u <command>] [-p <command>]
+    two_cents add-budget <name> [-b <dollars>] [-a <dollars-per-time>]
 
 Options:
   -D --no-download
@@ -29,63 +29,73 @@ Options:
 
   -a --initial-allowance <dollars-per-time>
         When adding a new budget, specify how quickly money should accumulate 
-        in that account.
+        in that budget.
 """
 
-import budget
+import two_cents
 
 def update_budget(download=True):
-    with budget.open_db() as session:
+    with two_cents.open_db() as session:
         if download:
-            budget.download_payments(session,
+            print("Downloading recent transactions...")
+            two_cents.download_payments(session,
                     prompt_for_username, prompt_for_password)
 
-        budget.update_allowances(session)
+        two_cents.update_allowances(session)
         assign_payments(session)
-        display_accounts(session)
+        display_budgets(session)
 
 def add_bank(scraper_key, username_cmd=None, password_cmd=None):
-    if budget.bank_exists(session, scraper_key):
-        print("Bank '{}' already exists.".format(arguments.bank))
-        return
+    with two_cents.open_db() as session:
+        if two_cents.bank_exists(session, scraper_key):
+            print("Bank '{}' already exists.".format(scraper_key))
+            return
 
-    if not username_cmd and not password_cmd:
-        print("""\
+        if scraper_key not in two_cents.scraper_classes:
+            print("Bank '{}' is not supported.".format(scraper_key))
+            if len(two_cents.scraper_classes) == 1:
+                print("Only '{}' is supported at present.".format(list(two_cents.scraper_classes.keys())[0]))
+            else:
+                print("Supported banks:", ', '.join("'{}'".format(x) for x in two_cents.scraper_classes))
+            return
+
+        if not username_cmd and not password_cmd:
+            print("""\
 Enter username and password commands.  You don't need to provide either 
 command, but if you don't you'll have to provide the missing fields every time 
 you download financial data from this bank.""")
-        print()
-        username_cmd = input("Username: ")
-        password_cmd = input("Password: ")
+            print()
+            username_cmd = input("Username: ")
+            password_cmd = input("Password: ")
 
-    elif not username:
-        print("""\
+        elif not username_cmd:
+            print("""\
 Enter a username command.  If no command is given, you'll be prompted for a 
 username every time you download financial data from this bank.""")
-        print()
-        username_cmd = input("Username: ")
+            print()
+            username_cmd = input("Username: ")
 
-    elif not password:
-        print("""\
+        elif not password_cmd:
+            print("""\
 Enter a password command.  If no command is given, you'll be prompted for a 
 password every time you download financial data from this bank.""")
-        print()
-        password_cmd = input("Password: ")
+            print()
+            password_cmd = input("Password: ")
 
-    with budget.open_db() as session:
-        bank = budget.Bank(scraper_key, username_cmd, password_cmd)
-        session.add(bank)
+        with two_cents.open_db() as session:
+            bank = two_cents.Bank(scraper_key, username_cmd, password_cmd)
+            session.add(bank)
 
 def add_budget(name, initial_balance, initial_allowance):
-    with budget.open_db() as session:
-        bank = budget.Bank(name, initial_balance, initial_allowance)
+    with two_cents.open_db() as session:
+        bank = two_cents.Budget(name, initial_balance, initial_allowance)
         session.add(bank)
 
 
 def assign_payments(session):
     import readline
 
-    # Handle the receipts using a simple state machine.  This architecture 
+    # Handle the payments using a simple state machine.  This architecture 
     # facilitates commands like 'skip all' and 'ignore all'.
 
     class ReadEvalPrintLoop:
@@ -94,17 +104,17 @@ def assign_payments(session):
             self.handle = self.default_handler
 
         def go(self, session):
-            payments = budget.get_unassigned_payments(session)
+            payments = two_cents.get_unassigned_payments(session)
 
             if not payments:
                 return
 
-            elif len(receipts) == 1:
-                print("Please assign the following transaction to an account:")
+            elif len(payments) == 1:
+                print("Please assign the following payment to an budget:")
                 print()
 
             else:
-                print("Please assign the following transactions to accounts:")
+                print("Please assign the following payments to budgets:")
                 print()
 
             for payment in payments:
@@ -142,16 +152,15 @@ def assign_payments(session):
                     self.handle = self.ignore_handler
                     break
 
-                # Attempt to assign the payment to the specified accounts.  If 
+                # Attempt to assign the payment to the specified budgets.  If 
                 # the input can't be parsed, print an error and ask again.
 
                 try:
                     payment.assign(command)
                     break
 
-                except AssignmentError as error:
+                except two_cents.AssignmentError as error:
                     print(error.raw_message)
-                    receipt.assign(session, accounts)
 
         def ignore_handler(self, payment):
             payment.ignore()
@@ -162,8 +171,8 @@ def assign_payments(session):
     class TabCompleter:
 
         def __init__(self, session):
-            self.accounts = budget.get_accounts(session)
-            self.commands = [x.name for x in self.accounts]
+            self.budgets = two_cents.get_budgets(session)
+            self.commands = [x.name for x in self.budgets]
             self.commands += ['skip', 'ignore', 'all']
             self.commands.sort()
 
@@ -179,12 +188,24 @@ def assign_payments(session):
     loop = ReadEvalPrintLoop()
     loop.go(session)
 
-def display_accounts(session):
+def display_budgets(session):
     """
-    Print a line briefly summarizing each account.
+    Print a line briefly summarizing each budget.
     """
-    for account in budget.get_accounts(session):
-        account.show()
+    from math import log10
+
+    budgets = two_cents.get_budgets(session)
+    name_width, balance_width = 0, 0
+
+    for budget in budgets:
+        name_width = max(len(budget.name), name_width)
+        balance_width = max(len(budget.balance_in_dollars), balance_width)
+
+    display_template = '{{:<{}}} {{:>{}}}'.format(name_width+1, balance_width)
+
+    for budget in two_cents.get_budgets(session):
+        print(display_template.format(
+            budget.name.title()+':', budget.balance_in_dollars))
 
 def prompt_for_username(bank):
     return input("Username for {}: ".format(bank))

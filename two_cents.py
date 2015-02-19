@@ -1,13 +1,15 @@
+#!/usr/bin/env python3
+
 ## Imports
 from __future__ import division
 
 import datetime
 import os
-import subprocess
 import shlex
-import textwrap
 import sqlalchemy
-import yaml
+import subprocess
+import re
+import textwrap
 
 from pprint import pprint
 from contextlib import contextmanager
@@ -15,6 +17,8 @@ from sqlalchemy.orm import *
 from sqlalchemy.schema import *
 from sqlalchemy.types import *
 from sqlalchemy.ext.declarative import declarative_base
+
+import banking
 
 ## Schema Types
 Session = sessionmaker()
@@ -35,12 +39,17 @@ class Budget (Base):
     def __init__(self, name, balance=None, allowance=None):
         self.name = name
         self.balance = balance or 0
-        self.allownace = allowance or ''
+        self.allowance = allowance or ''
+        self.last_update = today()
 
     def __repr__(self):
         repr = '<budget name={0.name} balance={0.balance} ' + \
                 ('allowance={0.allowance}>' if self.allowance else '>')
         return repr.format(self)
+
+    @property
+    def balance_in_dollars(self):
+        return format_value(self.balance)
 
     def update_allowance(self):
         this_update = today()
@@ -56,7 +65,7 @@ class Budget (Base):
         session.commit()
 
     def show(self, indent=''):
-        print('{}{} {}'.format(indent, self.name, format_value(self.value)))
+        print('{}{} {}'.format(indent, self.name, format_value(self.balance)))
 
 
 def get_budget(session, name):
@@ -79,7 +88,7 @@ class Payment (Base):
     __tablename__ = 'payments'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    bank = Column(Text, nullable=False)
+    bank_id = Column(Integer, ForeignKey('banks.id'))
     account_id = Column(String)
     transaction_id = Column(String)
     date = Column(Date, nullable=False)
@@ -118,21 +127,27 @@ class Payment (Base):
 
         # Unassign the payment from any budgets it was previously assigned to.
 
-        for name, value in parse_assignment(self.assignment, self.value):
-            try:
-                budget = get_budget(session, name)
-                budget.balance -= value
-            except NoSuchBudget:
-                pass
+        if self.assignment is not None:
+            for name, value in parse_assignment(
+                    self.assignment, self.value).items():
+                try:
+                    budget = get_budget(session, name)
+                    budget.balance -= value
+                except NoSuchBudget:
+                    pass
 
         # Assign the payment to the specified budgets.
 
         self.assignment = assignment
         self.ignored = False
 
-        for name, value in parse_assignment(assignment, self.assignable_value):
-            budget = get_budget(session, name)
-            budget.balance += value
+        for name, value in parse_assignment(
+                assignment, self.assignable_value).items():
+            try:
+                budget = get_budget(session, name)
+                budget.balance += value
+            except NoSuchBudget:
+                raise AssignmentError("no such budget '{}'".format(name))
 
         session.commit()
 
@@ -166,10 +181,13 @@ class Payment (Base):
         no longer exist cannot be reassigned.
         """
         assignable_value = self.value
+        session = Session.object_session(self)
 
-        for budget_name, value in parse_assignment(self.assignment, self.value):
-            if not budget_exists(budget_name):
-                assignable_value -= value
+        if self.assignment is not None:
+            for budget_name, value in parse_assignment(
+                    self.assignment, self.value).items():
+                if not budget_exists(session, budget_name):
+                    assignable_value -= value
 
         return assignable_value
 
@@ -188,10 +206,11 @@ class Bank (Base):
     scraper_key = Column(String, unique=True, nullable=False)
     username_command = Column(String)
     password_command = Column(String)
+    payments = relationship("Payment", backref="bank")
     last_update = Column(Date)
 
     def __init__(self, scraper_key, username_command, password_command):
-        self.scraper_key = name
+        self.scraper_key = scraper_key
         self.username_command = username_command
         self.password_command = password_command
         self.last_update = today()
@@ -222,14 +241,14 @@ class Bank (Base):
         # transactions in the database as payments.
 
         session = Session.object_session(self)
-        scraper_class = get_scraper_class(self.scraper_key)
+        scraper_class = scraper_classes[self.scraper_key]
         scraper = scraper_class(username, password)
         start_date = self.last_update - datetime.timedelta(days=30)
 
         for account in scraper.download(start_date):
             for transaction in account.statement.transactions:
                 payment = Payment(
-                        scraper.title,
+                        self,
                         account.number,
                         transaction.id,
                         transaction.date,
@@ -242,7 +261,7 @@ class Bank (Base):
 
     @property
     def title(self):
-        return get_scraper_class(self.scraper_key).title
+        return scraper_titles[self.scraper_key]
 
 
 def get_bank(session, name):
@@ -261,194 +280,13 @@ def bank_exists(session, key):
     return session.query(Bank).filter_by(scraper_key=key).count() > 0
 
 
-class Scraper:
+scraper_classes = {
+        'wells_fargo': banking.WellsFargo,
+}
 
-    def __init__(self, username, password):
-        self.username = username
-        self.password = password
-
-    def download(self, from_date=None, to_date=None):
-        raise NotImplementedError
-
-
-class WellsFargo (Scraper):
-    title = "Wells Fargo"
-
-    def download(self, from_date=None, to_date=None):
-        if to_date is None: to_date = datetime.date.today()
-        if from_date is None: from_date = to_date - datetime.timedelta(30)
-
-        self.setup_ssl_session()
-        account_page = self.load_account_page()
-        activity_page = self.load_activity_page(account_page)
-        download_page = self.load_download_page(activity_page)
-        return self.download_transactions(download_page, from_date, to_date)
-
-    def setup_ssl_session(self):
-        from urllib3.poolmanager import PoolManager
-
-        # Wells Fargo hangs if the default SSL configuration provided by 
-        # requests is used, so a custom one is used instead.  See:
-        # http://lukasa.co.uk/2013/01/Choosing_SSL_Version_In_Requests
-
-        class TLSv1Adapter(requests.adapters.HTTPAdapter):
-
-            def init_poolmanager(self, connections, maxsize, **kwargs):
-                self.poolmanager = PoolManager(
-                        num_pools=connections,
-                        maxsize=maxsize,
-                        ssl_version=ssl.PROTOCOL_TLSv1)
-
-        self.scraper = requests.Session()
-        self.scraper.mount('https://', TLSv1Adapter())
-
-    def load_account_page(self):
-        self.scraper.get('https://www.wellsfargo.com/')
-        login_data = {
-            'userid': self.username,
-            'password': self.password,
-            'screenid': 'SIGNON',
-            'origination': 'WebCons',
-            'LOB': 'Cons',
-            'u_p': '',
-        }
-        self.scraper.post('https://online.wellsfargo.com/signon', login_data)
-        response = self.scraper.get('https://online.wellsfargo.com/das/cgi-bin/session.cgi?screenid=SIGNON_PORTAL_PAUSE')
-
-        with open('debug/01_login_response.html', 'w') as file:
-            file.write(response.text)
-
-        # Make sure the login worked.
-
-        soup = BeautifulSoup(response.text)
-        error_message = soup.find(text=re.compile(
-            "^We do not recognize your username and/or password"))
-        if error_message:
-            raise ScrapingError("failed to log into Wells Fargo")
-
-        try:
-            return self.skip_online_statement(response.text)
-        except:
-            return response.text
-
-    def skip_online_statement(self, html):
-        soup = BeautifulSoup(html)
-        cancel_url = soup.find(
-                name='input', attrs={'name': 'Considering'}).parent['action']
-        data = {'Considering': 'Remind me later'}
-        response = self.scraper.post(cancel_url, data)
-
-        with open('debug/02_skip_question_response.html', 'w') as file:
-            file.write(response.text)
-
-        return response.text
-
-    def load_activity_page(self, html):
-        soup = BeautifulSoup(html)
-        link_attrs = {'title': re.compile('Account Activity')}
-        account_link = soup.find(name='a', attrs=link_attrs)
-        account_url = account_link['href']
-        response = self.scraper.get(account_url)
-
-        with open('debug/03_activity_response.html', 'w') as file:
-            file.write(response.text)
-
-        return response.text
-
-    def load_download_page(self, html):
-        soup = BeautifulSoup(html)
-        section = soup.find('div', id='transactionSectionWrapper')
-        url = section.div.a['href']
-        response = self.scraper.get(url)
-
-        with open('debug/04_download_response.html', 'w') as file:
-            file.write(response.text)
-
-        return response.text
-
-    def download_transactions(self, html, from_date, to_date):
-        soup = BeautifulSoup(html)
-        form = soup.find('form', id='accountActivityDownloadModel')
-        select = form.find('select', id='primaryKey')
-        form_url = form['action']
-        accounts = []
-
-        for option in select.find_all('option'):
-
-            # Request OFX data for each account within the given data range. 
-
-            form_data = {
-                    'primaryKey': option['value'],
-                    'fromDate': from_date.strftime('%m/%d/%y'),
-                    'toDate': to_date.strftime('%m/%d/%y'),
-                    'fileFormat': 'quickenOfx',
-                    'Download': 'Download',
-            }
-            response = self.scraper.post(form_url, form_data)
-            content_type = response.headers['content-type']
-
-            # If an HTML page is returned, that means there was an error 
-            # processing the form.  I'll assume the error is that there were no 
-            # transactions in the given date range, but this may be too naive.
-
-            if content_type.startswith('text/html'):
-                continue
-
-            # Financial data is returned in the proprietary QFX format, which 
-            # should be compatible with the open OFX standard.  Conveniently, 
-            # python already has a module for parsing this type of data.
-
-            bytes_io = io.BytesIO(response.text.encode('utf-8'))
-            ofx = ofxparse.OfxParser.parse(bytes_io)
-            accounts += ofx.accounts
-
-        return accounts
-
-
-def get_scraper_class(key):
-    return __dict__[key]
-
-def get_scraper_classes():
-    return Scraper.__subclasses__()
-
-def get_supported_banks():
-    return [x.title for x in get_scraper_classes()]
-
-
-class BudgetError (Exception):
-
-    def __init__(self, message=''):
-        self.message = message
-
-    def __str__(self):
-        return self.message
-
-
-class AllowanceError (BudgetError):
-
-    def __init__(self, allowance, message):
-        if allowance is not None:
-            self.message = "'{}': {}".format(allowance, message)
-        else:
-            self.message = message
-
-        
-class AssignmentError (BudgetError):
-
-    def __init__(self, assignment, message):
-        if assignment is not None:
-            self.message = "'{}': {}".format(assignment, message)
-        else:
-            self.message = message
-
-        self.raw_message = message
-
-
-class ScrapingError (BudgetError):
-
-    def __init__(self, message):
-        self.message = message
-
+scraper_titles = {
+        'wells_fargo': 'Wells Fargo',
+}
 
 
 @contextmanager
@@ -486,8 +324,8 @@ def update_allowances(session):
 
 def parse_assignment(assignment, value):
     """
-    Use the given assignment string to determine how the given value should 
-    be assigned to one or more budgets.
+    Use the given assignment string to determine how the given value (in cents) 
+    should be assigned to one or more budgets.
     
     Each assignment must be expressed as an budget name followed optionally by 
     an equal sign and a dollar value.  The full assignment string can contain 
@@ -500,26 +338,29 @@ def parse_assignment(assignment, value):
     budgets.  The most common case is that only one implicit budget will be 
     given.  In this case, the entire value is charged to the that budget.
 
-    >>> parse_assignment('A', 100)
-    {'A': 100}
+    >>> parse_assignment('A', 100) == {'A': 100}
+    True
 
-    >>> parse_assignment('A B', 100)
-    {'A': 50, 'B': 50}
+    >>> parse_assignment('A B', 100) == {'A': 50, 'B': 50}
+    True
 
-    >>> parse_assignment('A=70 B', 100)
-    {'A': 70, 'B': 30}
+    >>> parse_assignment('A=0.7 B', 100) == {'A': 70, 'B': 30}
+    True
 
-    >>> parse_assignment('A=70 B C', 100)
-    {'A': 70, 'B': 15, 'C': 15}
+    >>> parse_assignment('A B=0.7', 100) == {'A': 30, 'B': 70}
+    True
 
-    >>> parse_assignment('A=70 B=20 C', 100)
-    {'A': 70, 'B': 20, 'C': 10}
+    >>> parse_assignment('A=0.7 B C', 100) == {'A': 70, 'B': 15, 'C': 15}
+    True
+
+    >>> parse_assignment('A=0.7 B=0.2 C', 100) == {'A': 70, 'B': 20, 'C': 10}
+    True
     """
 
     import re
     import math
 
-    split_pattern = re.compile(r'(.*)=(\d*)')
+    split_pattern = re.compile(r'(\w*)=([\d.]*)')
     raw_value = value
     total_value = abs(value)
     total_value_string = format_value(total_value)
@@ -536,7 +377,7 @@ def parse_assignment(assignment, value):
         match = split_pattern.match(token)
         if match:
             token_name, token_value = match.groups()
-            token_value = budget.to_cents(token_value)
+            token_value = to_cents(token_value)
             explicit_budgets[token_name] = abs(token_value)
         else:
             implicit_budgets.append(token)
@@ -596,40 +437,47 @@ def parse_allowance(allowance):
     Each allowance is expected to have three words.  The first is a dollar 
     amount (which may or may not be preceded by a dollar sign), the second is 
     the literal "per", and the third is either "day", "month", or "year".  The 
-    return value is a float with units of cents per second.
+    return value is an integer value in units of cents per day.
 
-    >>> parse_allowance('5 daily')
-    0.005787037037037038
+    >>> parse_allowance('5 per day')
+    500
 
-    >>> parse_allowance('$5 daily')
-    0.005787037037037038
+    >>> parse_allowance('$5 per day')
+    500
 
-    >>> parse_allowance('150 monthly')
-    0.005852059925093633
+    >>> parse_allowance('150 per month')
+    505
 
-    >>> parse_allowance('100 yearly')
-    0.0003251144402829796
+    >>> parse_allowance('100 per year')
+    28
+
+    >>> parse_allowance('')
+    0
     """
 
-    tokens = allowance.split()
+    if allowance == '':
+        return 0
 
-    if len(tokens) != 3:
-        raise AllowanceError(allowance)
-    if tokens[1] != 'per':
-        raise AllowanceError(allowance)
+    allowance_pattern = re.compile('(\$?[0-9.]+) per (\w+)')
+    allowance_match = allowance_pattern.match(allowance)
 
-    cents = to_cents(tokens[0])
+    if not allowance_match:
+        raise AllowanceError(allowance, "doesn't match '<money> per <day|month|year>'")
 
-    if tokens[2] == 'day':
+    money_token, time_token = allowance_match.groups()
+
+    cents = to_cents(money_token)
+
+    if time_token == 'day':
         days = 1
-    elif tokens[2] == 'month':
+    elif time_token == 'month':
         days = 356 / 12
-    elif tokens[2] == 'year':
+    elif time_token == 'year':
         days = 356
     else:
-        raise AllowanceError(allowance)
+        raise AllowanceError(allowance, "must be 'per day', 'per month', or 'per year'")
 
-    return cents / days
+    return int(cents // days)
 
 def format_date(date):
     return date.strftime('%m/%d/%y')
@@ -648,7 +496,7 @@ def to_cents(dollars):
     The input may either be a numeric value or a string.  If it's a string, a 
     leading dollar sign may or may not be present.
     """
-    try: dollars.replace('$', '')
+    try: dollars = dollars.replace('$', '')
     except AttributeError: pass
     return int(100 * float(dollars))
 
@@ -661,4 +509,42 @@ def today():
     return datetime.date.today()
 
 
+class BudgetError (Exception):
 
+    def __init__(self, message=''):
+        self.message = message
+
+    def __str__(self):
+        return self.message
+
+
+class AllowanceError (BudgetError):
+
+    def __init__(self, allowance, message):
+        if allowance is not None:
+            self.message = "'{}': {}".format(allowance, message)
+        else:
+            self.message = message
+
+        
+class AssignmentError (BudgetError):
+
+    def __init__(self, assignment, message):
+        if assignment is not None:
+            self.message = "'{}': {}".format(assignment, message)
+        else:
+            self.message = message
+
+        self.raw_message = message
+
+
+class NoSuchBudget (BudgetError):
+    pass
+
+class NoSuchBank (BudgetError):
+    pass
+
+
+if __name__ == '__main__':
+    import doctest
+    doctest.testmod()
