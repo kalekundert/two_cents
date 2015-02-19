@@ -97,22 +97,26 @@ class Payment (Base):
     assignment = Column(String)
     ignored = Column(Boolean, nullable=False)
 
-    def __init__(self, bank, acct_id, txn_id, date, value, description):
-        self.bank = bank
+    def __init__(self, acct_id, txn_id, date, value, description):
         self.account_id = acct_id
         self.transaction_id = txn_id
         self.date = date
         self.value = value
-        self.bank = bank
         self.description = description
         self.ignored = False
 
     def __repr__(self):
+        return '<Payment acct_id={} txn_id={}>'.format(self.account_id, self.transaction_id)
         date = format_date(self.date)
         value = format_value(self.value)
         assignment = self.assignment or 'unassigned'
         return '<Payment id={} date={} value={} assignment={}>'.format(
                 self.id, date, value, assignment)
+
+    def __eq__(self, other):
+        self_id = self.account_id, self.transaction_id
+        other_id = other.account_id, other.transaction_id
+        return self_id == other_id
 
     def assign(self, assignment):
         """
@@ -138,20 +142,23 @@ class Payment (Base):
 
         # Assign the payment to the specified budgets.
 
-        self.assignment = assignment
-        self.ignored = False
-
         for name, value in parse_assignment(
                 assignment, self.assignable_value).items():
             try:
                 budget = get_budget(session, name)
                 budget.balance += value
             except NoSuchBudget:
-                raise AssignmentError("no such budget '{}'".format(name))
+                raise AssignmentError(assignment, "no such budget '{}'".format(name))
+
+        # Note that self.assignable_value will return 0 once self.assignment is 
+        # set.  That's why this line comes after the logic above.
+
+        self.assignment = assignment
+        self.ignored = False
 
         session.commit()
 
-    def ignore(self, session):
+    def ignore(self):
         assert self.assignment is None
         self.ignored = True
 
@@ -225,17 +232,22 @@ class Bank (Base):
         # stored in the database, so use those if they're present.  Otherwise 
         # prompt the user for the needed information.
 
-        if self.username_command:
-            command = shlex.split(self.username_command)
-            username = subprocess.check_output(command).decode('ascii').strip('\n')
-        else:
-            username = username_callback(self.title)
+        def get_user_info(command, interactive_prompt):
+            error_message = ""
 
-        if self.password_command:
-            command = shlex.split(self.password_command)
-            password = subprocess.check_output(command).decode('ascii').strip('\n')
-        else:
-            password = password_callback(self.title)
+            if command:
+                try:
+                    with open(os.devnull, 'w') as devnull:
+                        user_info = subprocess.check_output(
+                                shlex.split(command), stderr=devnull)
+                        return user_info.decode('ascii').strip('\n')
+                except subprocess.CalledProcessError as error:
+                    error_message = "Command '{}' returned non-zero exit status {}".format(command, error.returncode)
+
+            return interactive_prompt(self.title, error_message)
+
+        username = get_user_info(self.username_command, username_callback)
+        password = get_user_info(self.password_command, password_callback)
 
         # Scrape new transactions from the bank website, and store those 
         # transactions in the database as payments.
@@ -248,13 +260,14 @@ class Bank (Base):
         for account in scraper.download(start_date):
             for transaction in account.statement.transactions:
                 payment = Payment(
-                        self,
                         account.number,
                         transaction.id,
                         transaction.date,
                         to_cents(transaction.amount),
                         transaction.payee + ' ' + transaction.memo)
-                session.add(payment)
+
+                if payment not in self.payments:
+                    self.payments.append(payment)
 
         self.last_update = today()
         session.commit()

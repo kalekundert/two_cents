@@ -107,6 +107,8 @@ def assign_payments(session):
             payments = two_cents.get_unassigned_payments(session)
 
             if not payments:
+                print("No new transactions found.")
+                print()
                 return
 
             elif len(payments) == 1:
@@ -207,10 +209,12 @@ def display_budgets(session):
         print(display_template.format(
             budget.name.title()+':', budget.balance_in_dollars))
 
-def prompt_for_username(bank):
+def prompt_for_username(bank, error_message):
+    if error_message: print(error_message)
     return input("Username for {}: ".format(bank))
 
-def prompt_for_password(bank):
+def prompt_for_password(bank, error_message):
+    if error_message: print(error_message)
     return getpass.getpass("Password for {}: ".format(bank))
 
     
