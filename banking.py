@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 import os, sys, re, io, datetime
 import requests, ssl, ofxparse
@@ -112,7 +112,17 @@ class WellsFargo:
 
         for option in select.find_all('option'):
 
-            # Request OFX data for each account within the given data range. 
+            # For some reason, the whole form has to be submitted after an 
+            # account is selected.  So do that...
+
+            option_data = {
+                    'primaryKey': option['value'],
+                    'Select': ' Select ',
+            }
+            self.scraper.post(form_url, option_data)
+
+            # ...and then download the financial data for each account within 
+            # the given date range.
 
             form_data = {
                     'primaryKey': option['value'],
