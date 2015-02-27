@@ -52,9 +52,6 @@ class WellsFargo:
         self.scraper.post('https://online.wellsfargo.com/signon', login_data)
         response = self.scraper.get('https://online.wellsfargo.com/das/cgi-bin/session.cgi?screenid=SIGNON_PORTAL_PAUSE')
 
-        with open('debug/01_login_response.html', 'w') as file:
-            file.write(response.text)
-
         # Make sure the login worked.
 
         soup = BeautifulSoup(response.text)
@@ -74,10 +71,6 @@ class WellsFargo:
                 name='input', attrs={'name': 'Considering'}).parent['action']
         data = {'Considering': 'Remind me later'}
         response = self.scraper.post(cancel_url, data)
-
-        with open('debug/02_skip_question_response.html', 'w') as file:
-            file.write(response.text)
-
         return response.text
 
     def load_activity_page(self, html):
@@ -86,10 +79,6 @@ class WellsFargo:
         account_link = soup.find(name='a', attrs=link_attrs)
         account_url = account_link['href']
         response = self.scraper.get(account_url)
-
-        with open('debug/03_activity_response.html', 'w') as file:
-            file.write(response.text)
-
         return response.text
 
     def load_download_page(self, html):
@@ -97,10 +86,6 @@ class WellsFargo:
         section = soup.find('div', id='transactionSectionWrapper')
         url = section.div.a['href']
         response = self.scraper.get(url)
-
-        with open('debug/04_download_response.html', 'w') as file:
-            file.write(response.text)
-
         return response.text
 
     def download_transactions(self, html, from_date, to_date):

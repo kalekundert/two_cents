@@ -23,24 +23,28 @@ import banking
 ## Schema Types
 Session = sessionmaker()
 Base = declarative_base()
-Cents = Integer
-Days = Integer
+Dollars = Float
 
+
+db_path = '~/.config/twocents/budgets.db'
 
 class Budget (Base):
     __tablename__ = 'budgets'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False, unique=True)
-    balance = Column(Cents, nullable=False)
+    balance = Column(Dollars, nullable=False)
     allowance = Column(String)
-    last_update = Column(Date, nullable=False)
+    last_update = Column(DateTime, nullable=False)
 
     def __init__(self, name, balance=None, allowance=None):
         self.name = name
         self.balance = balance or 0
         self.allowance = allowance or ''
-        self.last_update = today()
+        self.last_update = now()
+
+        if name in ('skip', 'ignore'):
+            raise BudgetError("can't name a budget 'skip' or 'ignore'")
 
     def __repr__(self):
         repr = '<budget name={0.name} balance={0.balance} ' + \
@@ -48,24 +52,24 @@ class Budget (Base):
         return repr.format(self)
 
     @property
-    def balance_in_dollars(self):
-        return format_value(self.balance)
+    def pretty_balance(self):
+        return format_dollars(self.balance)
 
     def update_allowance(self):
-        this_update = today()
+        this_update = now()
         last_update = self.last_update
 
-        cents_per_day = parse_allowance(self.allowance)
-        days_elapsed = (this_update - last_update).days
+        dollars_per_second = parse_allowance(self.allowance)
+        seconds_elapsed = (this_update - last_update).total_seconds()
 
-        self.balance += cents_per_day * days_elapsed
+        self.balance += dollars_per_second * seconds_elapsed
         self.last_update = this_update
 
         session = Session.object_session(self)
         session.commit()
 
     def show(self, indent=''):
-        print('{}{} {}'.format(indent, self.name, format_value(self.balance)))
+        print('{}{} {}'.format(indent, self.name, format_dollars(self.balance)))
 
 
 def get_budget(session, name):
@@ -92,23 +96,21 @@ class Payment (Base):
     account_id = Column(String)
     transaction_id = Column(String)
     date = Column(Date, nullable=False)
-    value = Column(Cents, nullable=False)
+    value = Column(Dollars, nullable=False)
     description = Column(Text)
     assignment = Column(String)
-    ignored = Column(Boolean, nullable=False)
 
     def __init__(self, acct_id, txn_id, date, value, description):
         self.account_id = acct_id
         self.transaction_id = txn_id
         self.date = date
-        self.value = value
+        self.value = parse_dollars(value)
         self.description = description
-        self.ignored = False
 
     def __repr__(self):
         return '<Payment acct_id={} txn_id={}>'.format(self.account_id, self.transaction_id)
         date = format_date(self.date)
-        value = format_value(self.value)
+        value = format_dollars(self.value)
         assignment = self.assignment or 'unassigned'
         return '<Payment id={} date={} value={} assignment={}>'.format(
                 self.id, date, value, assignment)
@@ -154,20 +156,18 @@ class Payment (Base):
         # set.  That's why this line comes after the logic above.
 
         self.assignment = assignment
-        self.ignored = False
-
         session.commit()
 
     def ignore(self):
         assert self.assignment is None
-        self.ignored = True
+        self.assignment = 'ignore'
 
         session = Session.object_session(self)
         session.commit()
 
     def show(self, indent=''):
         print("{}Date:    {}".format(indent, format_date(self.date)))
-        print("{}Value:   {}".format(indent, format_value(self.value)))
+        print("{}Value:   {}".format(indent, format_dollars(self.value)))
         print("{}Bank:    {}".format(indent, self.bank.title))
 
         if len(self.description) < (79 - len(indent) - 13):
@@ -183,9 +183,9 @@ class Payment (Base):
     @property
     def assignable_value(self):
         """
-        Return the total value of this payment that is either unassigned or 
-        assigned to budgets that still exist.  Value assigned to budgets that 
-        no longer exist cannot be reassigned.
+        Return the total value of this payment that is either unassigned, 
+        ignored, or assigned to budgets that still exist.  Value assigned to 
+        budgets that no longer exist cannot be reassigned.
         """
         assignable_value = self.value
         session = Session.object_session(self)
@@ -193,6 +193,8 @@ class Payment (Base):
         if self.assignment is not None:
             for budget_name, value in parse_assignment(
                     self.assignment, self.value).items():
+                if budget_name == 'ignore':
+                    continue
                 if not budget_exists(session, budget_name):
                     assignable_value -= value
 
@@ -200,10 +202,10 @@ class Payment (Base):
 
 
 def get_unassigned_payments(session):
-    return session.query(Payment).filter_by(assignment=None, ignored=False).all()
+    return session.query(Payment).filter_by(assignment=None).all()
 
 def get_num_unassigned_payments(session):
-    return session.query(Payment).filter_by(assignment=None, ignored=False).count()
+    return session.query(Payment).filter_by(assignment=None).count()
 
 
 class Bank (Base):
@@ -214,13 +216,13 @@ class Bank (Base):
     username_command = Column(String)
     password_command = Column(String)
     payments = relationship("Payment", backref="bank")
-    last_update = Column(Date)
+    last_update = Column(DateTime)
 
     def __init__(self, scraper_key, username_command, password_command):
         self.scraper_key = scraper_key
         self.username_command = username_command
         self.password_command = password_command
-        self.last_update = today()
+        self.last_update = now()
 
     def download_payments(self, username_callback, password_callback):
         """
@@ -263,13 +265,13 @@ class Bank (Base):
                         account.number,
                         transaction.id,
                         transaction.date,
-                        to_cents(transaction.amount),
+                        transaction.amount,
                         transaction.payee + ' ' + transaction.memo)
 
                 if payment not in self.payments:
                     self.payments.append(payment)
 
-        self.last_update = today()
+        self.last_update = now()
         session.commit()
 
     @property
@@ -303,24 +305,27 @@ scraper_titles = {
 
 
 @contextmanager
-def open_db(path=None):
+def open_db(path=db_path):
+    # Make sure the database directory exists.
+
+    path = os.path.expanduser(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    # Create an database session.  Currently the whole program is hard-coded to 
+    # use SQLite, but in the future I may want to use MySQL to make budgets 
+    # accessible from many devices.
+
+    engine = sqlalchemy.create_engine('sqlite:///' + path)
+    Base.metadata.create_all(engine)
+    session = sqlalchemy.orm.sessionmaker(bind=engine)()
+
+    # Return the session to the calling code.  If the calling code completes 
+    # without error, commit and close the session.  Otherwise, rollback the 
+    # session to prevent bad data from being written to the database.
+
     try:
-        # Create a new session.
-        path = path or '~/.config/budget/budget.db'
-        url = 'sqlite:///' + os.path.expanduser(path)
-        engine = sqlalchemy.create_engine(url)
-        session = sqlalchemy.orm.sessionmaker(bind=engine)()
-
-        # Make sure the database is properly set up.
-        Base.metadata.create_all(engine)
-
-        # Return the session.
         yield session
         session.commit()
-
-    except (KeyboardInterrupt, EOFError):
-        session.rollback()
-        print()
     except:
         session.rollback()
         raise
@@ -335,9 +340,20 @@ def update_allowances(session):
     for budget in get_budgets(session):
         budget.update_allowance()
 
+def parse_dollars(value):
+    """
+    Convert the input dollar value to a numeric value.
+
+    The input may either be a numeric value or a string.  If it's a string, a 
+    leading dollar sign may or may not be present.
+    """
+    try: value = value.replace('$', '')
+    except AttributeError: pass
+    return float(value)
+
 def parse_assignment(assignment, value):
     """
-    Use the given assignment string to determine how the given value (in cents) 
+    Use the given assignment string to determine how the given dollar value 
     should be assigned to one or more budgets.
     
     Each assignment must be expressed as an budget name followed optionally by 
@@ -357,16 +373,16 @@ def parse_assignment(assignment, value):
     >>> parse_assignment('A B', 100) == {'A': 50, 'B': 50}
     True
 
-    >>> parse_assignment('A=0.7 B', 100) == {'A': 70, 'B': 30}
+    >>> parse_assignment('A=70 B', 100) == {'A': 70, 'B': 30}
     True
 
-    >>> parse_assignment('A B=0.7', 100) == {'A': 30, 'B': 70}
+    >>> parse_assignment('A B=70', 100) == {'A': 30, 'B': 70}
     True
 
-    >>> parse_assignment('A=0.7 B C', 100) == {'A': 70, 'B': 15, 'C': 15}
+    >>> parse_assignment('A=70 B C', 100) == {'A': 70, 'B': 15, 'C': 15}
     True
 
-    >>> parse_assignment('A=0.7 B=0.2 C', 100) == {'A': 70, 'B': 20, 'C': 10}
+    >>> parse_assignment('A=70 B=20 C', 100) == {'A': 70, 'B': 20, 'C': 10}
     True
     """
 
@@ -376,7 +392,7 @@ def parse_assignment(assignment, value):
     split_pattern = re.compile(r'(\w*)=([\d.]*)')
     raw_value = value
     total_value = abs(value)
-    total_value_string = format_value(total_value)
+    total_value_string = format_dollars(total_value)
 
     # Parse the given assignment.
 
@@ -390,7 +406,7 @@ def parse_assignment(assignment, value):
         match = split_pattern.match(token)
         if match:
             token_name, token_value = match.groups()
-            token_value = to_cents(token_value)
+            token_value = parse_dollars(token_value)
             explicit_budgets[token_name] = abs(token_value)
         else:
             implicit_budgets.append(token)
@@ -444,25 +460,26 @@ def parse_assignment(assignment, value):
 
 def parse_allowance(allowance):
     """
-    Convert the given allowance to cents per day.
+    Convert the given allowance to dollars per second.
 
     An allowance is a string that represents some amount of money per time.  
     Each allowance is expected to have three words.  The first is a dollar 
-    amount (which may or may not be preceded by a dollar sign), the second is 
-    the literal "per", and the third is either "day", "month", or "year".  The 
-    return value is an integer value in units of cents per day.
+    amount (which may be preceded by a dollar sign), the second is the literal 
+    string "per", and the third is one of "day", "month", or "year".  If the 
+    given allowance is properly formatted, this function returns a float in 
+    units of dollars per second.  Otherwise an AllowanceError is raised.
 
     >>> parse_allowance('5 per day')
-    500
+    5.787037037037037e-05
 
     >>> parse_allowance('$5 per day')
-    500
+    5.787037037037037e-05
 
     >>> parse_allowance('150 per month')
-    505
+    5.7077625570776254e-05
 
     >>> parse_allowance('100 per year')
-    28
+    3.1709791983764586e-06
 
     >>> parse_allowance('')
     0
@@ -471,7 +488,7 @@ def parse_allowance(allowance):
     if allowance == '':
         return 0
 
-    allowance_pattern = re.compile('(\$?[0-9.]+) per (\w+)')
+    allowance_pattern = re.compile('(\$?[0-9.]+) per (day|month|year)')
     allowance_match = allowance_pattern.match(allowance)
 
     if not allowance_match:
@@ -479,47 +496,36 @@ def parse_allowance(allowance):
 
     money_token, time_token = allowance_match.groups()
 
-    cents = to_cents(money_token)
+    dollars = parse_dollars(money_token)
 
     if time_token == 'day':
-        days = 1
+        seconds = 86400
     elif time_token == 'month':
-        days = 356 / 12
+        seconds = 86400 * 356 / 12
     elif time_token == 'year':
-        days = 356
+        seconds = 86400 * 356
     else:
-        raise AllowanceError(allowance, "must be 'per day', 'per month', or 'per year'")
+        raise AssertionError
 
-    return int(cents // days)
+    return dollars / seconds
 
 def format_date(date):
     return date.strftime('%m/%d/%y')
 
-def format_value(value):
+def format_dollars(value):
     if value < 0:
         value = abs(value)
-        return '-${}.{:02d}'.format(value // 100, value % 100)
+        return '-${:.2f}'.format(value)
     else:
-        return '${}.{:02d}'.format(value // 100, value % 100)
+        return '${:.2f}'.format(value)
 
-def to_cents(dollars):
-    """
-    Convert the dollar input value to cents.
-
-    The input may either be a numeric value or a string.  If it's a string, a 
-    leading dollar sign may or may not be present.
-    """
-    try: dollars = dollars.replace('$', '')
-    except AttributeError: pass
-    return int(100 * float(dollars))
-
-def today():
+def now():
     """
     Return today's date.  This function is important because it can be 
     monkey-patched during testing make the whole program deterministic.  It's 
     also a bit more convenient than the function in datetime.
     """
-    return datetime.date.today()
+    return datetime.datetime.now()
 
 
 class BudgetError (Exception):

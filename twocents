@@ -32,17 +32,28 @@ Options:
         in that budget.
 """
 
+# Things to do
+# ============
+# - Add a command to transfer money.
+# - Add commands to update banks and budgets.
+# - Add commands to remove banks and budgets.
+# - Add a machine learning algorithm to predict assignments.
+
 import two_cents
 
 def update_budget(download=True):
     with two_cents.open_db() as session:
+        if two_cents.get_num_budgets(session) == 0:
+            print("No budgets to display.  Use 'twocents add-budget' to create some.")
+            return
+
         if download:
             print("Downloading recent transactions...")
             two_cents.download_payments(session,
                     prompt_for_username, prompt_for_password)
 
-        two_cents.update_allowances(session)
         assign_payments(session)
+        two_cents.update_allowances(session)
         display_budgets(session)
 
 def add_bank(scraper_key, username_cmd=None, password_cmd=None):
@@ -164,6 +175,8 @@ def assign_payments(session):
                 except two_cents.AssignmentError as error:
                     print(error.raw_message)
 
+            print()
+
         def ignore_handler(self, payment):
             payment.ignore()
 
@@ -201,13 +214,13 @@ def display_budgets(session):
 
     for budget in budgets:
         name_width = max(len(budget.name), name_width)
-        balance_width = max(len(budget.balance_in_dollars), balance_width)
+        balance_width = max(len(budget.pretty_balance), balance_width)
 
     display_template = '{{:<{}}} {{:>{}}}'.format(name_width+1, balance_width)
 
     for budget in two_cents.get_budgets(session):
         print(display_template.format(
-            budget.name.title()+':', budget.balance_in_dollars))
+            budget.name.title()+':', budget.pretty_balance))
 
 def prompt_for_username(bank, error_message):
     if error_message: print(error_message)
@@ -222,22 +235,26 @@ if __name__ == '__main__':
     import docopt
     args = docopt.docopt(__doc__)
 
-    if args['add-bank']:
-        add_bank(
-                scraper_key=args['<name>'],
-                username_cmd=args['--username-cmd'],
-                password_cmd=args['--password-cmd'],
-        )
+    try:
+        if args['add-bank']:
+            add_bank(
+                    scraper_key=args['<name>'],
+                    username_cmd=args['--username-cmd'],
+                    password_cmd=args['--password-cmd'],
+            )
 
-    elif args['add-budget']:
-        add_budget(
-                name=args['<name>'],
-                initial_balance=args['--initial-balance'],
-                initial_allowance=args['--initial-allowance'],
-        )
+        elif args['add-budget']:
+            add_budget(
+                    name=args['<name>'],
+                    initial_balance=args['--initial-balance'],
+                    initial_allowance=args['--initial-allowance'],
+            )
 
-    else:
-        update_budget(
-                download=not args['--no-download'],
-        )
+        else:
+            update_budget(
+                    download=not args['--no-download'],
+            )
+
+    except KeyboardInterrupt:
+        print()
 
