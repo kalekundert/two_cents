@@ -27,6 +27,9 @@ Dollars = Float
 
 
 db_path = '~/.config/twocents/budgets.db'
+seconds_per_day = 86400
+seconds_per_month = 86400 * 356 / 12
+seconds_per_year = 86400 * 356
 
 class Budget (Base):
     __tablename__ = 'budgets'
@@ -54,6 +57,27 @@ class Budget (Base):
     @property
     def pretty_balance(self):
         return format_dollars(self.balance)
+
+    @property
+    def recovery_time(self):
+        """
+        Return the number of days it will take this account to reach a positive 
+        balance, assuming no more payments are made.  If the account is already 
+        positive, return 0.  If the account will never become positive (i.e. it 
+        has no allowance), return -1.
+        """
+        from math import ceil
+
+        if self.balance > 0:
+            return 0
+
+        dollars_per_second = parse_allowance(self.allowance)
+        dollars_per_day = dollars_per_second * seconds_per_day
+
+        if dollars_per_day <= 0:
+            return -1
+
+        return int(ceil(abs(self.balance / dollars_per_day)))
 
     def update_allowance(self):
         this_update = now()
@@ -499,11 +523,11 @@ def parse_allowance(allowance):
     dollars = parse_dollars(money_token)
 
     if time_token == 'day':
-        seconds = 86400
+        seconds = seconds_per_day
     elif time_token == 'month':
-        seconds = 86400 * 356 / 12
+        seconds = seconds_per_month
     elif time_token == 'year':
-        seconds = 86400 * 356
+        seconds = seconds_per_year
     else:
         raise AssertionError
 

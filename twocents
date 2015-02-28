@@ -38,6 +38,9 @@ Options:
 # - Add commands to update banks and budgets.
 # - Add commands to remove banks and budgets.
 # - Add a machine learning algorithm to predict assignments.
+# - Add a command that just downloads payments that can be run via cron.  Then 
+#   I won't ever have to wait for it to download payments when I want to check 
+#   my balances.
 
 import two_cents
 
@@ -219,8 +222,13 @@ def display_budgets(session):
     display_template = '{{:<{}}} {{:>{}}}'.format(name_width+1, balance_width)
 
     for budget in two_cents.get_budgets(session):
-        print(display_template.format(
-            budget.name.title()+':', budget.pretty_balance))
+        name = budget.name.title()
+        balance = budget.pretty_balance
+
+        if budget.recovery_time > 0:
+            balance += ' ({} days)'.format(budget.recovery_time)
+
+        print(display_template.format(name, balance))
 
 def prompt_for_username(bank, error_message):
     if error_message: print(error_message)
