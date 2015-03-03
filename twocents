@@ -4,14 +4,20 @@
 Maintain a budget that updates every day.
 
 Usage:
-    two_cents [-D]
+    two_cents [-D] [-I]
     two_cents add-bank <name> [-u <command>] [-p <command>]
     two_cents add-budget <name> [-b <dollars>] [-a <dollars-per-time>]
+    two_cents download-payments [-I]
 
 Options:
   -D --no-download
         Don't download new transactions from the bank.  This can be a slow 
         step, so you may want to skip it if you know nothing new has happened.
+
+  -I --no-interaction
+        Don't use standard in to prompt for passwords.  If a password command 
+        is found in the database, use that.  Otherwise print an error message 
+        and exit.
 
   -u --username-cmd <command>
         When adding a new bank, use this option to specify a command that can 
@@ -44,67 +50,107 @@ Options:
 
 import two_cents
 
-def update_budget(download=True):
-    with two_cents.open_db() as session:
-        if two_cents.get_num_budgets(session) == 0:
-            print("No budgets to display.  Use 'twocents add-budget' to create some.")
-            return
+def main():
+    try:
+        import docopt
+        args = docopt.docopt(__doc__)
 
-        if download:
-            print("Downloading recent transactions...")
-            two_cents.download_payments(session,
-                    prompt_for_username, prompt_for_password)
+        with two_cents.open_db() as session:
+            if args['add-bank']:
+                add_bank(
+                        session,
+                        scraper_key=args['<name>'],
+                        username_cmd=args['--username-cmd'],
+                        password_cmd=args['--password-cmd'],
+                )
 
-        assign_payments(session)
-        two_cents.update_allowances(session)
-        display_budgets(session)
+            elif args['add-budget']:
+                add_budget(
+                        session,
+                        name=args['<name>'],
+                        initial_balance=args['--initial-balance'],
+                        initial_allowance=args['--initial-allowance'],
+                )
 
-def add_bank(scraper_key, username_cmd=None, password_cmd=None):
-    with two_cents.open_db() as session:
-        if two_cents.bank_exists(session, scraper_key):
-            print("Bank '{}' already exists.".format(scraper_key))
-            return
+            elif args['download-payments']:
+                download_payments(
+                        session,
+                        interactive=not args['--no-interaction'],
+                )
 
-        if scraper_key not in two_cents.scraper_classes:
-            print("Bank '{}' is not supported.".format(scraper_key))
-            if len(two_cents.scraper_classes) == 1:
-                print("Only '{}' is supported at present.".format(list(two_cents.scraper_classes.keys())[0]))
             else:
-                print("Supported banks:", ', '.join("'{}'".format(x) for x in two_cents.scraper_classes))
-            return
+                update_budget(
+                        session,
+                        download=not args['--no-download'],
+                        interactive=not args['--no-interaction'],
+                )
 
-        if not username_cmd and not password_cmd:
-            print("""\
+    except KeyboardInterrupt:
+        print()
+
+def add_bank(session, scraper_key, username_cmd=None, password_cmd=None):
+    if two_cents.bank_exists(session, scraper_key):
+        print("Bank '{}' already exists.".format(scraper_key))
+        return
+
+    if scraper_key not in two_cents.scraper_classes:
+        print("Bank '{}' is not supported.".format(scraper_key))
+        if len(two_cents.scraper_classes) == 1:
+            print("Only '{}' is supported at present.".format(list(two_cents.scraper_classes.keys())[0]))
+        else:
+            print("Supported banks:", ', '.join("'{}'".format(x) for x in two_cents.scraper_classes))
+        return
+
+    if not username_cmd and not password_cmd:
+        print("""\
 Enter username and password commands.  You don't need to provide either 
 command, but if you don't you'll have to provide the missing fields every time 
 you download financial data from this bank.""")
-            print()
-            username_cmd = input("Username: ")
-            password_cmd = input("Password: ")
+        print()
+        username_cmd = input("Username: ")
+        password_cmd = input("Password: ")
 
-        elif not username_cmd:
-            print("""\
+    elif not username_cmd:
+        print("""\
 Enter a username command.  If no command is given, you'll be prompted for a 
 username every time you download financial data from this bank.""")
-            print()
-            username_cmd = input("Username: ")
+        print()
+        username_cmd = input("Username: ")
 
-        elif not password_cmd:
-            print("""\
+    elif not password_cmd:
+        print("""\
 Enter a password command.  If no command is given, you'll be prompted for a 
 password every time you download financial data from this bank.""")
-            print()
-            password_cmd = input("Password: ")
+        print()
+        password_cmd = input("Password: ")
 
-        with two_cents.open_db() as session:
-            bank = two_cents.Bank(scraper_key, username_cmd, password_cmd)
-            session.add(bank)
-
-def add_budget(name, initial_balance, initial_allowance):
     with two_cents.open_db() as session:
-        bank = two_cents.Budget(name, initial_balance, initial_allowance)
+        bank = two_cents.Bank(scraper_key, username_cmd, password_cmd)
         session.add(bank)
 
+def add_budget(session, name, initial_balance, initial_allowance):
+    bank = two_cents.Budget(name, initial_balance, initial_allowance)
+    session.add(bank)
+
+def download_payments(session, interactive=True):
+    two_cents.download_payments(
+            session,
+            get_username_prompter(interactive),
+            get_username_prompter(interactive),
+    )
+
+def update_budget(session, download=True, interactive=True):
+    if two_cents.get_num_budgets(session) == 0:
+        print("No budgets to display.  Use 'twocents add-budget' to create some.")
+        return
+
+    if download:
+        print("Downloading recent transactions...")
+        download_payments(session, interactive)
+
+    assign_payments(session)
+    two_cents.update_allowances(session)
+    display_budgets(session)
 
 def assign_payments(session):
     import readline
@@ -230,39 +276,18 @@ def display_budgets(session):
 
         print(display_template.format(name, balance))
 
-def prompt_for_username(bank, error_message):
-    if error_message: print(error_message)
-    return input("Username for {}: ".format(bank))
+def get_username_prompter(interactive=True):
+    def username_prompter(bank, error_message):
+        if error_message: print(error_message)
+        return input("Username for {}: ".format(bank))
+    return username_prompter
 
-def prompt_for_password(bank, error_message):
-    if error_message: print(error_message)
-    return getpass.getpass("Password for {}: ".format(bank))
+def get_password_prompter(interactive=True):
+    def password_prompter(bank, error_message):
+        if error_message: print(error_message)
+        return getpass.getpass("Password for {}: ".format(bank))
+    return password_prompter
 
-    
 if __name__ == '__main__':
-    import docopt
-    args = docopt.docopt(__doc__)
-
-    try:
-        if args['add-bank']:
-            add_bank(
-                    scraper_key=args['<name>'],
-                    username_cmd=args['--username-cmd'],
-                    password_cmd=args['--password-cmd'],
-            )
-
-        elif args['add-budget']:
-            add_budget(
-                    name=args['<name>'],
-                    initial_balance=args['--initial-balance'],
-                    initial_allowance=args['--initial-allowance'],
-            )
-
-        else:
-            update_budget(
-                    download=not args['--no-download'],
-            )
-
-    except KeyboardInterrupt:
-        print()
+    main()
 
