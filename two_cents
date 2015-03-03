@@ -272,8 +272,10 @@ def display_budgets(session):
         balance = budget.pretty_balance
 
         if budget.recovery_time > 0:
-            balance += ' ({} days)'.format(budget.recovery_time)
-
+            balance += ' ({} {})'.format(
+                    budget.recovery_time,
+                    'day' if budget.recovery_time == 1 else 'days',
+            )
         print(display_template.format(name, balance))
 
 def get_username_prompter(interactive=True):
