@@ -333,7 +333,8 @@ def open_db(path=db_path):
     # Make sure the database directory exists.
 
     path = os.path.expanduser(path)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if not os.path.isdir(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path))
 
     # Create an database session.  Currently the whole program is hard-coded to 
     # use SQLite, but in the future I may want to use MySQL to make budgets 

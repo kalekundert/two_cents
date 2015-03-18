@@ -4,12 +4,13 @@
 Maintain a budget that updates every day.
 
 Usage:
-    two_cents [-D] [-I]
+    two_cents [-d] [-D] [-I]
     two_cents add-bank <name> [-u <command>] [-p <command>]
     two_cents add-budget <name> [-b <dollars>] [-a <dollars-per-time>]
     two_cents download-payments [-I]
 
 Options:
+
   -D --no-download
         Don't download new transactions from the bank.  This can be a slow 
         step, so you may want to skip it if you know nothing new has happened.
@@ -44,9 +45,6 @@ Options:
 # - Add commands to update banks and budgets.
 # - Add commands to remove banks and budgets.
 # - Add a machine learning algorithm to predict assignments.
-# - Add a command that just downloads payments that can be run via cron.  Then 
-#   I won't ever have to wait for it to download payments when I want to check 
-#   my balances.
 
 import two_cents
 
@@ -167,8 +165,6 @@ def assign_payments(session):
             payments = two_cents.get_unassigned_payments(session)
 
             if not payments:
-                print("No new transactions found.")
-                print()
                 return
 
             elif len(payments) == 1:
@@ -281,12 +277,14 @@ def display_budgets(session):
 def get_username_prompter(interactive=True):
     def username_prompter(bank, error_message):
         if error_message: print(error_message)
+        if not interactive: raise SystemExit
         return input("Username for {}: ".format(bank))
     return username_prompter
 
 def get_password_prompter(interactive=True):
     def password_prompter(bank, error_message):
         if error_message: print(error_message)
+        if not interactive: raise SystemExit
         return getpass.getpass("Password for {}: ".format(bank))
     return password_prompter
 
