@@ -190,9 +190,13 @@ class Payment (Base):
         session.commit()
 
     def show(self, indent=''):
-        print("{}Date:    {}".format(indent, format_date(self.date)))
-        print("{}Value:   {}".format(indent, format_dollars(self.value)))
-        print("{}Bank:    {}".format(indent, self.bank.title))
+        print("{}Id: {}".format(indent, self.id))
+        print("{}Bank: {}".format(indent, self.bank.title))
+        print("{}Date: {}".format(indent, format_date(self.date)))
+        print("{}Value: {}".format(indent, format_dollars(self.value)))
+
+        if self.assignment is not None:
+            print("{}Assignment: {}".format(indent, self.assignment))
 
         if len(self.description) < (79 - len(indent) - 13):
             print("{}Description: {}".format(indent, self.description))
@@ -224,6 +228,15 @@ class Payment (Base):
 
         return assignable_value
 
+
+def get_payment(session, id):
+    return session.query(Payment).get(id)
+
+def get_payments(session, budget=None):
+    if budget is not None:
+        return session.query(Payment).filter_by(assignment=budget).all()
+    else:
+        return session.query(Payment).all()
 
 def get_unassigned_payments(session):
     return session.query(Payment).filter_by(assignment=None).all()

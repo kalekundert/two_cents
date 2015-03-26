@@ -8,6 +8,8 @@ Usage:
     two_cents add-bank <name> [-u <command>] [-p <command>]
     two_cents add-budget <name> [-b <dollars>] [-a <dollars-per-time>]
     two_cents download-payments [-I]
+    two_cents reassign-payment <payment_id> <budget>
+    two_cents show-payments [<budget>]
 
 Options:
 
@@ -61,7 +63,6 @@ def main():
                         username_cmd=args['--username-cmd'],
                         password_cmd=args['--password-cmd'],
                 )
-
             elif args['add-budget']:
                 add_budget(
                         session,
@@ -69,20 +70,28 @@ def main():
                         initial_balance=args['--initial-balance'],
                         initial_allowance=args['--initial-allowance'],
                 )
-
             elif args['download-payments']:
                 download_payments(
                         session,
                         interactive=not args['--no-interaction'],
                 )
-
+            elif args['reassign-payment']:
+                reassign_payment(
+                        session,
+                        args['<payment_id>'],
+                        args['<budget>'],
+                )
+            elif args['show-payments']:
+                show_payments(
+                        session,
+                        args['<budget>'],
+                )
             else:
                 update_budget(
                         session,
                         download=not args['--no-download'],
                         interactive=not args['--no-interaction'],
                 )
-
     except KeyboardInterrupt:
         print()
 
@@ -129,6 +138,23 @@ password every time you download financial data from this bank.""")
 def add_budget(session, name, initial_balance, initial_allowance):
     bank = two_cents.Budget(name, initial_balance, initial_allowance)
     session.add(bank)
+
+def show_payments(session, budget=None):
+    for payment in two_cents.get_payments(session, budget):
+        payment.show()
+        print()
+
+def reassign_payment(session, payment_id, budget):
+    payment = two_cents.get_payment(session, payment_id)
+
+    if payment is None:
+        print("No payment with id='{}'.".format(payment_id))
+        return
+    if payment.assignment == budget:
+        print("Payment #{} is already assigned to '{}'".format(payment_id, budget))
+        return
+
+    payment.assign(budget)
 
 def download_payments(session, interactive=True):
     two_cents.download_payments(
