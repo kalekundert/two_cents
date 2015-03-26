@@ -165,7 +165,7 @@ def download_payments(session, interactive=True):
 
 def update_budget(session, download=True, interactive=True):
     if two_cents.get_num_budgets(session) == 0:
-        print("No budgets to display.  Use 'twocents add-budget' to create some.")
+        print("No budgets to display.  Use 'two_cents add-budget' to create some.")
         return
 
     if download:
@@ -175,6 +175,7 @@ def update_budget(session, download=True, interactive=True):
     assign_payments(session)
     two_cents.update_allowances(session)
     display_budgets(session)
+
 
 def assign_payments(session):
     import readline
