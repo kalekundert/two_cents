@@ -395,6 +395,9 @@ def parse_assignment(assignment, value):
     >>> parse_assignment('A', 100) == {'A': 100}
     True
 
+    >>> parse_assignment('A', 10.50) == {'A': 10.50}
+    True
+
     >>> parse_assignment('A B', 100) == {'A': 50, 'B': 50}
     True
 
@@ -473,7 +476,7 @@ def parse_assignment(assignment, value):
     # Reapply the correct signs to the results.  Before this point, every 
     # value was made positive to simplify the algorithm.
 
-    fix_sign = lambda x: int(math.copysign(x, raw_value))
+    fix_sign = lambda x: math.copysign(x, raw_value)
 
     for budget, value in processed_budgets.items():
         processed_budgets[budget] = fix_sign(value)
@@ -501,10 +504,10 @@ def parse_allowance(allowance):
     5.787037037037037e-05
 
     >>> parse_allowance('150 per month')
-    5.7077625570776254e-05
+    5.852059925093633e-05
 
     >>> parse_allowance('100 per year')
-    3.1709791983764586e-06
+    3.2511444028297963e-06
 
     >>> parse_allowance('')
     0
