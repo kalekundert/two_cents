@@ -378,6 +378,10 @@ def update_allowances(session):
     for budget in get_budgets(session):
         budget.update_allowance()
 
+def transfer_money(dollars, from_budget, to_budget):
+    from_budget.balance -= dollars
+    to_budget.balance += dollars
+
 def parse_dollars(value):
     """
     Convert the input dollar value to a numeric value.
