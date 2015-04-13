@@ -465,7 +465,7 @@ def parse_assignment(assignment, value):
 
     if implicit_budgets:
         implicit_value = total_value - explicit_value
-        value_chunk = implicit_value // len(implicit_budgets)
+        value_chunk = implicit_value / len(implicit_budgets)
 
         if value_chunk == 0:
             raise AssignmentError(assignment,
