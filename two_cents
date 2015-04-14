@@ -287,18 +287,19 @@ def display_budgets(session):
         name_width = max(len(budget.name), name_width)
         balance_width = max(len(budget.pretty_balance), balance_width)
 
-    display_template = '{{:<{}}} {{:>{}}}'.format(name_width+1, balance_width)
+    row_template = '{{:<{}}} {{:>{}}}'.format(name_width+1, balance_width)
 
     for budget in two_cents.get_budgets(session):
         name = budget.name.title()
         balance = budget.pretty_balance
+        row = row_template.format(name, balance)
 
         if budget.recovery_time > 0:
-            balance += ' ({} {})'.format(
+            row += ' ({} {})'.format(
                     budget.recovery_time,
                     'day' if budget.recovery_time == 1 else 'days',
             )
-        print(display_template.format(name, balance))
+        print(row)
 
 def get_username_prompter(interactive=True):
     def username_prompter(bank, error_message):
