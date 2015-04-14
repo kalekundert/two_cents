@@ -12,7 +12,6 @@ Usage:
     two_cents show-payments [<budget>]
 
 Options:
-
   -D --no-download
         Don't download new transactions from the bank.  This can be a slow 
         step, so you may want to skip it if you know nothing new has happened.
