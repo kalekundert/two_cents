@@ -47,17 +47,6 @@ Options:
         in that budget.
 """
 
-# Things to do
-# ============
-# - Add a command to transfer money.
-# - Add a command to transfer allowances.
-# - Add commands to update banks and budgets.
-# - Add commands to remove banks and budgets.
-# - Add a machine learning algorithm to predict assignments.
-# - Add descriptions to budgets.
-# - Add a command that shows your total monthly expenses.
-# - Allowances should be stored as floats (dollars per seconds)
-
 import two_cents
 
 def main(argv=None, db_path='~/.config/two_cents/budgets.db'):
