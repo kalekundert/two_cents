@@ -176,6 +176,8 @@ def test_update_budgets(fresh_test_db):
 
     with open_test_db() as session:
         fill_database(session)
+        two_cents.get_budget(session, 'groceries').allowance = '150 per month'
+        two_cents.get_budget(session, 'restaurants').allowance = '100 per month'
 
     run_two_cents('-D', 'groceries', 'restaurants')
 
@@ -184,7 +186,7 @@ def test_update_budgets(fresh_test_db):
         assert two_cents.get_payment(session, 1).assignment == 'groceries'
         assert two_cents.get_payment(session, 2).assignment == 'restaurants'
 
-        add_payment(two_cents.get_bank(session, 'wells_fargo'))
+        add_payment(two_cents.get_bank(session, 'wells_fargo'), 150)
 
     run_two_cents('-D', 'groceries')
 
@@ -205,4 +207,9 @@ def test_update_budgets(fresh_test_db):
     with open_test_db() as session:
         assert two_cents.get_num_unassigned_payments(session) == 0
         assert two_cents.get_payment(session, 4).assignment == 'ignore'
+
+    assert run_two_cents('-D') == '''\
+Groceries     $50.00
+Restaurants  -$10.00 (3 days)
+'''
 
