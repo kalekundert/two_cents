@@ -1,4 +1,2 @@
-/debug
-/sandbox
-/coverage
-/.coverage
+/env
+*.egg-info
