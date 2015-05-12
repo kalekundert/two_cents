@@ -1,32 +1,28 @@
 #!/usr/bin/env python3
 
 ## Imports
-from __future__ import division
-
 import datetime
 import os
 import shlex
 import sqlalchemy
 import subprocess
 import re
-import textwrap
 
-from pprint import pprint
 from contextlib import contextmanager
 from sqlalchemy.orm import *
 from sqlalchemy.schema import *
 from sqlalchemy.types import *
 from sqlalchemy.ext.declarative import declarative_base
 
-import banking
+from . import banks
 
 ## Schema Types
 Session = sessionmaker()
 Base = declarative_base()
 Dollars = Float
+DollarsPerSec = Float
 
 
-db_path = '~/.config/twocents/budgets.db'
 seconds_per_day = 86400
 seconds_per_month = 86400 * 356 / 12
 seconds_per_year = 86400 * 356
@@ -42,14 +38,14 @@ class Budget (Base):
 
     def __init__(self, name, balance=None, allowance=None):
         self.name = name
-        self.balance = balance or 0
+        self.balance = int(balance or 0)
         self.allowance = allowance or ''
         self.last_update = now()
 
         if name in ('skip', 'ignore'):
-            raise BudgetError("can't name a budget 'skip' or 'ignore'")
+            raise UserError("can't name a budget 'skip' or 'ignore'")
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         repr = '<budget name={0.name} balance={0.balance} ' + \
                 ('allowance={0.allowance}>' if self.allowance else '>')
         return repr.format(self)
@@ -68,7 +64,7 @@ class Budget (Base):
         """
         from math import ceil
 
-        if self.balance > 0:
+        if self.balance >= 0:
             return 0
 
         dollars_per_second = parse_allowance(self.allowance)
@@ -91,9 +87,6 @@ class Budget (Base):
 
         session = Session.object_session(self)
         session.commit()
-
-    def show(self, indent=''):
-        print('{}{} {}'.format(indent, self.name, format_dollars(self.balance)))
 
 
 def get_budget(session, name):
@@ -131,8 +124,7 @@ class Payment (Base):
         self.value = parse_dollars(value)
         self.description = description
 
-    def __repr__(self):
-        return '<Payment acct_id={} txn_id={}>'.format(self.account_id, self.transaction_id)
+    def __repr__(self):  # pragma: no cover
         date = format_date(self.date)
         value = format_dollars(self.value)
         assignment = self.assignment or 'unassigned'
@@ -146,91 +138,54 @@ class Payment (Base):
 
     def assign(self, assignment):
         """
-        Specify which budgets should cover this payment.  A payment can be 
-        split and assigned to multiple budgets.  If the payment was already 
-        assigned before this call, the old budgets will be credited the value 
-        they were originally assigned and the new budgets will be debited as 
-        appropriate.
+        Specify which budget should cover this payment.  If the payment was 
+        already assigned before this call, the old budget will be credited and 
+        the new budgets will be debited as appropriate.
         """
 
         session = Session.object_session(self)
 
-        # Unassign the payment from any budgets it was previously assigned to.
+        # Warn the user if the new assignment is the same as the old one.
+        
+        if assignment == self.assignment:
+            raise AssignmentError("Payment #{} is already assigned to '{}'".format(self.id, assignment))
 
-        if self.assignment is not None:
-            for name, value in parse_assignment(
-                    self.assignment, self.value).items():
-                try:
-                    budget = get_budget(session, name)
-                    budget.balance -= value
-                except NoSuchBudget:
-                    pass
+        # Make sure the new assignment actually exists.
 
-        # Assign the payment to the specified budgets.
+        try:
+            new_budget = get_budget(session, assignment)
+        except NoSuchBudget:
+            raise NoSuchBudget(assignment)
 
-        for name, value in parse_assignment(
-                assignment, self.assignable_value).items():
+        # If this payment was already assigned to another budget, make sure 
+        # that budget still exists.  If it doesn't, raise an exception because 
+        # there's no way to credit the value of this payment.  If it does, then 
+        # credit it the value of this payment.
+
+        if self.assignment not in (None, 'ignore'):
             try:
-                budget = get_budget(session, name)
-                budget.balance += value
+                old_budget = get_budget(session, self.assignment)
             except NoSuchBudget:
-                raise AssignmentError(assignment, "no such budget '{}'".format(name))
+                raise AssignmentError("Payment #{} assigned to '{}', which no longer exists.".format(self.id, self.assignment))
 
-        # Note that self.assignable_value will return 0 once self.assignment is 
-        # set.  That's why this line comes after the logic above.
+            old_budget.balance -= self.value
 
+        # Debit the new assignment the value of this payment.
+
+        new_budget.balance += self.value
         self.assignment = assignment
-        session.commit()
 
     def ignore(self):
-        assert self.assignment is None
-        self.assignment = 'ignore'
-
-        session = Session.object_session(self)
-        session.commit()
-
-    def show(self, indent=''):
-        print("{}Id: {}".format(indent, self.id))
-        print("{}Bank: {}".format(indent, self.bank.title))
-        print("{}Date: {}".format(indent, format_date(self.date)))
-        print("{}Value: {}".format(indent, format_dollars(self.value)))
-
-        if self.assignment is not None:
-            print("{}Assignment: {}".format(indent, self.assignment))
-
-        if len(self.description) < (79 - len(indent) - 13):
-            print("{}Description: {}".format(indent, self.description))
+        if self.assignment is None:
+            self.assignment = 'ignore'
         else:
-            description = textwrap.wrap(
-                    self.description,
-                    initial_indent=indent+'  ', subsequent_indent=indent+'  ')
-
-            print("{}Description:".format(indent))
-            print('\n'.join(description))
-
-    @property
-    def assignable_value(self):
-        """
-        Return the total value of this payment that is either unassigned, 
-        ignored, or assigned to budgets that still exist.  Value assigned to 
-        budgets that no longer exist cannot be reassigned.
-        """
-        assignable_value = self.value
-        session = Session.object_session(self)
-
-        if self.assignment is not None:
-            for budget_name, value in parse_assignment(
-                    self.assignment, self.value).items():
-                if budget_name == 'ignore':
-                    continue
-                if not budget_exists(session, budget_name):
-                    assignable_value -= value
-
-        return assignable_value
+            raise AssignmentError("Payment can't be ignored because it's already assigned to '{}'.".format(self.assignment))
 
 
 def get_payment(session, id):
-    return session.query(Payment).get(id)
+    payment = session.query(Payment).get(id)
+    if payment is None: raise NoSuchPayment(id)
+    else: return payment
 
 def get_payments(session, budget=None):
     if budget is not None:
@@ -255,10 +210,15 @@ class Bank (Base):
     payments = relationship("Payment", backref="bank")
     last_update = Column(DateTime)
 
-    def __init__(self, scraper_key, username_command, password_command):
+    def __init__(self, session, scraper_key):
+        if bank_exists(session, scraper_key):
+            raise UserError("Bank '{}' already exists.".format(scraper_key))
+        if scraper_key not in scraper_classes:
+            raise NoSuchScraper(scraper_key)
+
         self.scraper_key = scraper_key
-        self.username_command = username_command
-        self.password_command = password_command
+        self.username_command = None
+        self.password_command = None
         self.last_update = now()
 
     def download_payments(self, username_callback, password_callback):
@@ -316,11 +276,11 @@ class Bank (Base):
         return scraper_titles[self.scraper_key]
 
 
-def get_bank(session, name):
+def get_bank(session, key):
     try:
-        return session.query(Bank).filter_by(name=name).one()
+        return session.query(Bank).filter_by(scraper_key=key).one()
     except sqlalchemy.orm.exc.NoResultFound:
-        raise NoSuchBank(name)
+        raise NoSuchBank(key)
 
 def get_banks(session):
     return session.query(Bank).all()
@@ -333,7 +293,7 @@ def bank_exists(session, key):
 
 
 scraper_classes = {
-        'wells_fargo': banking.WellsFargo,
+        'wells_fargo': banks.WellsFargo,
 }
 
 scraper_titles = {
@@ -342,10 +302,10 @@ scraper_titles = {
 
 
 @contextmanager
-def open_db(path=db_path):
+def open_db(path):
     # Make sure the database directory exists.
 
-    path = os.path.expanduser(path)
+    path = os.path.abspath(os.path.expanduser(path))
     if not os.path.isdir(os.path.dirname(path)):
         os.makedirs(os.path.dirname(path))
 
@@ -382,6 +342,10 @@ def transfer_money(dollars, from_budget, to_budget):
     from_budget.balance -= dollars
     to_budget.balance += dollars
 
+def transfer_allowance(dollars_per_time, from_budget, to_budget):
+    from_budget.balance -= dollars
+    to_budget.balance += dollars
+
 def parse_dollars(value):
     """
     Convert the input dollar value to a numeric value.
@@ -391,117 +355,14 @@ def parse_dollars(value):
     """
     try: value = value.replace('$', '')
     except AttributeError: pass
-    return float(value)
 
-def parse_assignment(assignment, value):
-    """
-    Use the given assignment string to determine how the given dollar value 
-    should be assigned to one or more budgets.
-    
-    Each assignment must be expressed as an budget name followed optionally by 
-    an equal sign and a dollar value.  The full assignment string can contain 
-    multiple assignments can be separated with spaces, although this means that 
-    each assignment cannot contain any spaces (e.g. around the equal sign).  
-    Budgets with dollar values are referred to as explicit budgets, while 
-    those without are referred to as implicit.  The total value the explicit 
-    budgets may not exceed the value of the receipt.  Any value leftover after 
-    the explicit budgets are considered is divided evenly between the implicit 
-    budgets.  The most common case is that only one implicit budget will be 
-    given.  In this case, the entire value is charged to the that budget.
+    try: dollars = float(value)
+    except: raise MoneyError(value)
 
-    >>> parse_assignment('A', 100) == {'A': 100}
-    True
+    from math import isfinite
+    if not isfinite(dollars): raise MoneyError(value)
 
-    >>> parse_assignment('A', 10.50) == {'A': 10.50}
-    True
-
-    >>> parse_assignment('A B', 100) == {'A': 50, 'B': 50}
-    True
-
-    >>> parse_assignment('A=70 B', 100) == {'A': 70, 'B': 30}
-    True
-
-    >>> parse_assignment('A B=70', 100) == {'A': 30, 'B': 70}
-    True
-
-    >>> parse_assignment('A=70 B C', 100) == {'A': 70, 'B': 15, 'C': 15}
-    True
-
-    >>> parse_assignment('A=70 B=20 C', 100) == {'A': 70, 'B': 20, 'C': 10}
-    True
-    """
-
-    import re
-    import math
-
-    split_pattern = re.compile(r'(\w*)=([\d.]*)')
-    raw_value = value
-    total_value = abs(value)
-    total_value_string = format_dollars(total_value)
-
-    # Parse the given assignment.
-
-    implicit_budgets = []
-    explicit_budgets = {}
-
-    if not assignment:
-        raise AssignmentError(assignment, "no assignment given")
-
-    for token in assignment.split():
-        match = split_pattern.match(token)
-        if match:
-            token_name, token_value = match.groups()
-            token_value = parse_dollars(token_value)
-            explicit_budgets[token_name] = abs(token_value)
-        else:
-            implicit_budgets.append(token)
-
-    processed_budgets = explicit_budgets
-    explicit_value = sum(explicit_budgets.values())
-
-    # Complain if too much money has been allocated.
-
-    if explicit_value > total_value:
-        raise AssignmentError(assignment,
-                'more than {} assigned'.format(total_value_string))
-
-    # Determine how much money should be assigned to the implicit budgets.
-
-    if implicit_budgets:
-        implicit_value = total_value - explicit_value
-        value_chunk = implicit_value / len(implicit_budgets)
-
-        if value_chunk == 0:
-            raise AssignmentError(assignment,
-                    "no money assigned to implicit budgets")
-
-        for name in implicit_budgets:
-            processed_budgets[name] = value_chunk
-            implicit_value -= value_chunk
-
-        remainder_budget = implicit_budgets[-1]
-        processed_budgets[remainder_budget] += implicit_value
-
-    # Complain if too little money has been allocated.  This can only 
-    # happen if no implicit budget were given.
-
-    if sum(processed_budgets.values()) < total_value:
-        assert not implicit_budgets
-        raise AssignmentError(assignment,
-                "less than {} assigned".format(total_value_string))
-
-    # Reapply the correct signs to the results.  Before this point, every 
-    # value was made positive to simplify the algorithm.
-
-    fix_sign = lambda x: math.copysign(x, raw_value)
-
-    for budget, value in processed_budgets.items():
-        processed_budgets[budget] = fix_sign(value)
-
-    # Return a dictionary which tells how much of the original value is 
-    # assigned to each budget.
-
-    return processed_budgets
+    return dollars
 
 def parse_allowance(allowance):
     """
@@ -513,21 +374,6 @@ def parse_allowance(allowance):
     string "per", and the third is one of "day", "month", or "year".  If the 
     given allowance is properly formatted, this function returns a float in 
     units of dollars per second.  Otherwise an AllowanceError is raised.
-
-    >>> parse_allowance('5 per day')
-    5.787037037037037e-05
-
-    >>> parse_allowance('$5 per day')
-    5.787037037037037e-05
-
-    >>> parse_allowance('150 per month')
-    5.852059925093633e-05
-
-    >>> parse_allowance('100 per year')
-    3.2511444028297963e-06
-
-    >>> parse_allowance('')
-    0
     """
 
     if allowance == '':
@@ -550,7 +396,7 @@ def parse_allowance(allowance):
     elif time_token == 'year':
         seconds = seconds_per_year
     else:
-        raise AssertionError
+        raise AssertionError    # pragma: no cover
 
     return dollars / seconds
 
@@ -573,7 +419,7 @@ def now():
     return datetime.datetime.now()
 
 
-class BudgetError (Exception):
+class UserError (Exception):
 
     def __init__(self, message=''):
         self.message = message
@@ -582,7 +428,7 @@ class BudgetError (Exception):
         return self.message
 
 
-class AllowanceError (BudgetError):
+class AllowanceError (UserError):
 
     def __init__(self, allowance, message):
         if allowance is not None:
@@ -591,24 +437,41 @@ class AllowanceError (BudgetError):
             self.message = message
 
         
-class AssignmentError (BudgetError):
+class AssignmentError (UserError):
+    pass
 
-    def __init__(self, assignment, message):
-        if assignment is not None:
-            self.message = "'{}': {}".format(assignment, message)
+class MoneyError (UserError):
+
+    def __init__(self, value):
+        self.message = "Expected a dollar value, not '{}'.".format(value)
+
+
+class NoSuchBudget (UserError):
+
+    def __init__(self, name):
+        self.message = "No budget named '{}'.".format(name)
+
+
+class NoSuchPayment (UserError):
+
+    def __init__(self, payment_id):
+        self.message = "No payment with id='{}'.".format(payment_id)
+
+
+class NoSuchBank (UserError):
+
+    def __init__(self, scraper_key):
+        self.message = "No bank named '{}'.".format(scraper_key)
+
+
+class NoSuchScraper (UserError):
+
+    def __init__(self, scraper_key):
+        self.message = "Bank '{}' is not supported.\n".format(scraper_key)
+        if len(scraper_classes) == 1:
+            self.message += "Only '{}' is supported at present.".format(list(scraper_classes.keys())[0])
         else:
-            self.message = message
-
-        self.raw_message = message
+            self.message += "Supported banks: " + ', '.join("'{}'".format(x) for x in scraper_classes)
 
 
-class NoSuchBudget (BudgetError):
-    pass
 
-class NoSuchBank (BudgetError):
-    pass
-
-
-if __name__ == '__main__':
-    import doctest
-    doctest.testmod()

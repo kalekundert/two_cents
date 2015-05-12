@@ -8,34 +8,41 @@ Usage:
     two_cents add-bank <name> [-u <command>] [-p <command>]
     two_cents add-budget <name> [-b <dollars>] [-a <dollars-per-time>]
     two_cents download-payments [-I]
-    two_cents reassign-payment <payment_id> <budget>
+    two_cents reassign-payment <payment-id> <budget>
     two_cents show-payments [<budget>]
+    two_cents transfer-allowance <dollars-per-time> <budget-from> <budget-to>
+    two_cents transfer-money <dollars> <budget-from> <budget-to>
 
 Options:
-  -D --no-download
+  -d, --download
+        Force new transactions to be downloaded from the bank.  Downloading new 
+        transactions is the default behavior, so the purpose of this flag is to 
+        allow the --no-download flag to be overridden.
+
+  -D, --no-download
         Don't download new transactions from the bank.  This can be a slow 
         step, so you may want to skip it if you know nothing new has happened.
 
-  -I --no-interaction
-        Don't use standard in to prompt for passwords.  If a password command 
-        is found in the database, use that.  Otherwise print an error message 
+  -I, --no-interaction
+        Don't use stdin to prompt for passwords.  If a password command is 
+        found in the database, use that.  Otherwise print an error message 
         and exit.
 
-  -u --username-cmd <command>
+  -u, --username-cmd <command>
         When adding a new bank, use this option to specify a command that can 
         be used to get your username.  You will be prompted for one if this 
         option isn't specified.
 
-  -p --password-cmd <command>
+  -p, --password-cmd <command>
         When adding a new bank, use this option to specify a command that can 
         be used to get your password.  You will be prompted for one if this 
         option isn't specified.
 
-  -b --initial-balance <dollars>
+  -b, --initial-balance <dollars>
         When adding a new budget, specify how much money should start off in 
         the budget.
 
-  -a --initial-allowance <dollars-per-time>
+  -a, --initial-allowance <dollars-per-time>
         When adding a new budget, specify how quickly money should accumulate 
         in that budget.
 """
@@ -43,18 +50,22 @@ Options:
 # Things to do
 # ============
 # - Add a command to transfer money.
+# - Add a command to transfer allowances.
 # - Add commands to update banks and budgets.
 # - Add commands to remove banks and budgets.
 # - Add a machine learning algorithm to predict assignments.
+# - Add descriptions to budgets.
+# - Add a command that shows your total monthly expenses.
+# - Allowances should be stored as floats (dollars per seconds)
 
 import two_cents
 
-def main():
+def main(argv=None, db_path='~/.config/two_cents/budgets.db'):
     try:
         import docopt
-        args = docopt.docopt(__doc__)
+        args = docopt.docopt(__doc__, argv)
 
-        with two_cents.open_db() as session:
+        with two_cents.open_db(db_path) as session:
             if args['add-bank']:
                 add_bank(
                         session,
@@ -77,7 +88,7 @@ def main():
             elif args['reassign-payment']:
                 reassign_payment(
                         session,
-                        args['<payment_id>'],
+                        args['<payment-id>'],
                         args['<budget>'],
                 )
             elif args['show-payments']:
@@ -85,27 +96,26 @@ def main():
                         session,
                         args['<budget>'],
                 )
+            elif args['transfer-money']:
+                transfer_money(
+                        session,
+                        args['<dollars>'],
+                        args['<budget-from>'],
+                        args['<budget-to>'],
+                )
             else:
-                update_budget(
+                update_budgets(
                         session,
                         download=not args['--no-download'],
                         interactive=not args['--no-interaction'],
                 )
+    except two_cents.UserError as error:
+        print(error)
     except KeyboardInterrupt:
         print()
 
 def add_bank(session, scraper_key, username_cmd=None, password_cmd=None):
-    if two_cents.bank_exists(session, scraper_key):
-        print("Bank '{}' already exists.".format(scraper_key))
-        return
-
-    if scraper_key not in two_cents.scraper_classes:
-        print("Bank '{}' is not supported.".format(scraper_key))
-        if len(two_cents.scraper_classes) == 1:
-            print("Only '{}' is supported at present.".format(list(two_cents.scraper_classes.keys())[0]))
-        else:
-            print("Supported banks:", ', '.join("'{}'".format(x) for x in two_cents.scraper_classes))
-        return
+    bank = two_cents.Bank(session, scraper_key)
 
     if not username_cmd and not password_cmd:
         print("""\
@@ -113,47 +123,31 @@ Enter username and password commands.  You don't need to provide either
 command, but if you don't you'll have to provide the missing fields every time 
 you download financial data from this bank.""")
         print()
-        username_cmd = input("Username: ")
-        password_cmd = input("Password: ")
+        username_cmd = prompt("Username: ")
+        password_cmd = prompt("Password: ")
 
     elif not username_cmd:
         print("""\
 Enter a username command.  If no command is given, you'll be prompted for a 
 username every time you download financial data from this bank.""")
         print()
-        username_cmd = input("Username: ")
+        username_cmd = prompt("Username: ")
 
     elif not password_cmd:
         print("""\
 Enter a password command.  If no command is given, you'll be prompted for a 
 password every time you download financial data from this bank.""")
         print()
-        password_cmd = input("Password: ")
+        password_cmd = prompt("Password: ")
 
-    with two_cents.open_db() as session:
-        bank = two_cents.Bank(scraper_key, username_cmd, password_cmd)
-        session.add(bank)
+    bank.username_command = username_cmd
+    bank.password_command = password_cmd
 
-def add_budget(session, name, initial_balance, initial_allowance):
-    bank = two_cents.Budget(name, initial_balance, initial_allowance)
     session.add(bank)
 
-def show_payments(session, budget=None):
-    for payment in two_cents.get_payments(session, budget):
-        payment.show()
-        print()
-
-def reassign_payment(session, payment_id, budget):
-    payment = two_cents.get_payment(session, payment_id)
-
-    if payment is None:
-        print("No payment with id='{}'.".format(payment_id))
-        return
-    if payment.assignment == budget:
-        print("Payment #{} is already assigned to '{}'".format(payment_id, budget))
-        return
-
-    payment.assign(budget)
+def add_budget(session, name, initial_balance, initial_allowance):
+    budget = two_cents.Budget(name, initial_balance, initial_allowance)
+    session.add(budget)
 
 def download_payments(session, interactive=True):
     two_cents.download_payments(
@@ -162,10 +156,24 @@ def download_payments(session, interactive=True):
             get_username_prompter(interactive),
     )
 
-def update_budget(session, download=True, interactive=True):
+def reassign_payment(session, payment_id, budget):
+    payment = two_cents.get_payment(session, payment_id)
+    payment.assign(budget)
+
+def show_payments(session, budget=None):
+    for payment in two_cents.get_payments(session, budget):
+        show_payment(payment)
+        print()
+
+def transfer_money(session, dollars, budget_from, budget_to):
+    two_cents.transfer_money(
+            two_cents.parse_dollars(dollars),
+            two_cents.get_budget(session, budget_from),
+            two_cents.get_budget(session, budget_to))
+
+def update_budgets(session, download=True, interactive=True):
     if two_cents.get_num_budgets(session) == 0:
-        print("No budgets to display.  Use 'two_cents add-budget' to create some.")
-        return
+        raise two_cents.UserError("No budgets to display.  Use 'two_cents add-budget' to create some.")
 
     if download:
         print("Downloading recent transactions...")
@@ -173,8 +181,19 @@ def update_budget(session, download=True, interactive=True):
 
     assign_payments(session)
     two_cents.update_allowances(session)
-    display_budgets(session)
+    show_budgets(session)
 
+
+def print(*args, **kwargs):
+    import builtins
+    return builtins.print(*args, **kwargs)
+
+def prompt(message, password=False):
+    if password:
+        import getpass
+        return getpass.getpass(message)
+    else:
+        return input(message)
 
 def assign_payments(session):
     import readline
@@ -205,14 +224,14 @@ def assign_payments(session):
                 self.handle(payment)
 
         def default_handler(self, payment):
-            payment.show(indent='  ')
+            show_payment(payment, indent='  ')
             print()
 
             while True:
                 
                 # Prompt the user for an assignment.
 
-                command = input("Account: ")
+                command = prompt("Account: ")
 
                 # See if the user wants to skip assigning one or more payments 
                 # and come back to them later.
@@ -274,7 +293,7 @@ def assign_payments(session):
     loop = ReadEvalPrintLoop()
     loop.go(session)
 
-def display_budgets(session):
+def show_budgets(session):
     """
     Print a line briefly summarizing each budget.
     """
@@ -297,24 +316,41 @@ def display_budgets(session):
         if budget.recovery_time > 0:
             row += ' ({} {})'.format(
                     budget.recovery_time,
-                    'day' if budget.recovery_time == 1 else 'days',
-            )
+                    'day' if budget.recovery_time == 1 else 'days')
         print(row)
+
+def show_payment(payment, indent=''):
+    import textwrap
+
+    print("{}Id: {}".format(indent, payment.id))
+    print("{}Bank: {}".format(indent, payment.bank.title))
+    print("{}Date: {}".format(indent, two_cents.format_date(payment.date)))
+    print("{}Value: {}".format(indent, two_cents.format_dollars(payment.value)))
+
+    if payment.assignment is not None:
+        print("{}Assignment: {}".format(indent, payment.assignment))
+
+    if len(payment.description) < (79 - len(indent) - 13):
+        print("{}Description: {}".format(indent, payment.description))
+    else:
+        description = textwrap.wrap(
+                payment.description, width=79,
+                initial_indent=indent+'  ', subsequent_indent=indent+'  ')
+
+        print("{}Description:".format(indent))
+        print('\n'.join(description))
 
 def get_username_prompter(interactive=True):
     def username_prompter(bank, error_message):
         if error_message: print(error_message)
         if not interactive: raise SystemExit
-        return input("Username for {}: ".format(bank))
+        return prompt("Username for {}: ".format(bank))
     return username_prompter
 
 def get_password_prompter(interactive=True):
     def password_prompter(bank, error_message):
         if error_message: print(error_message)
         if not interactive: raise SystemExit
-        return getpass.getpass("Password for {}: ".format(bank))
+        return prompt("Password for {}: ".format(bank), password=True)
     return password_prompter
-
-if __name__ == '__main__':
-    main()
 
