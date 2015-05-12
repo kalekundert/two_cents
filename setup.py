@@ -12,5 +12,16 @@ distutils.core.setup(
         author='Kale Kundert',
         url='https://github.com/username/two_cents',
         packages=['two_cents'],
-        entry_points = {'console_scripts': ['two_cents=two_cents.cli:main']},
+        install_requires=[
+            'SQLAlchemy==1.0.4',
+            'beautifulsoup4==4.3.2',
+            'docopt==0.6.2',
+            'ofxparse==0.14',
+            'pytest==2.7.0',
+            'pytest-cov==1.8.1',
+            'requests==2.7.0',
+        ],
+        entry_points = {
+            'console_scripts': ['two_cents=two_cents.cli:main'],
+        },
 )
