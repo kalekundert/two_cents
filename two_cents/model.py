@@ -20,12 +20,12 @@ from . import banks
 Session = sessionmaker()
 Base = declarative_base()
 Dollars = Float
-DollarsPerSec = Float
+DollarsPerDay = Float
 
 
 seconds_per_day = 86400
-seconds_per_month = 86400 * 356 / 12
-seconds_per_year = 86400 * 356
+days_per_month = 356 / 12
+days_per_year = 356
 
 class Budget (Base):
     __tablename__ = 'budgets'
@@ -33,7 +33,7 @@ class Budget (Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False, unique=True)
     balance = Column(Dollars, nullable=False)
-    allowance = Column(DollarsPerSec)
+    allowance = Column(DollarsPerDay)
     last_update = Column(DateTime, nullable=False)
 
     def __init__(self, name, balance=None, allowance=None):
@@ -46,8 +46,8 @@ class Budget (Base):
             raise UserError("can't name a budget 'skip' or 'ignore'")
 
     def __repr__(self):  # pragma: no cover
-        repr = '<budget name={0.name} balance={0.balance} ' + \
-                ('allowance={0.allowance}>' if self.allowance else '>')
+        repr = '<budget name={0.name} balance={0.balance}' + \
+                (' allowance={0.allowance}>' if self.allowance else '>')
         return repr.format(self)
 
     @property
@@ -67,19 +67,16 @@ class Budget (Base):
         if self.balance >= 0:
             return 0
 
-        dollars_per_second = self.allowance
-        dollars_per_day = dollars_per_second * seconds_per_day
-
-        if dollars_per_day <= 0:
+        if self.allowance <= 0:
             return -1
 
-        return int(ceil(abs(self.balance / dollars_per_day)))
+        return int(ceil(abs(self.balance / self.allowance)))
 
     def update_allowance(self):
         this_update = now()
         last_update = self.last_update
 
-        dollars_per_second = self.allowance
+        dollars_per_second = self.allowance / seconds_per_day
         seconds_elapsed = (this_update - last_update).total_seconds()
 
         self.balance += dollars_per_second * seconds_elapsed
@@ -363,14 +360,14 @@ def parse_dollars(value):
 
 def parse_allowance(allowance):
     """
-    Convert the given allowance to dollars per second.
+    Convert the given allowance to dollars per day.
 
     An allowance is a string that represents some amount of money per time.  
     Each allowance is expected to have three words.  The first is a dollar 
     amount (which may be preceded by a dollar sign), the second is the literal 
     string "per", and the third is one of "day", "month", or "year".  If the 
     given allowance is properly formatted, this function returns a float in 
-    units of dollars per second.  Otherwise an AllowanceError is raised.
+    units of dollars per day.  Otherwise an AllowanceError is raised.
     """
 
     if allowance == '':
@@ -387,15 +384,15 @@ def parse_allowance(allowance):
     dollars = parse_dollars(money_token)
 
     if time_token == 'day':
-        seconds = seconds_per_day
+        days = 1
     elif time_token == 'month':
-        seconds = seconds_per_month
+        days = days_per_month
     elif time_token == 'year':
-        seconds = seconds_per_year
+        days = days_per_year
     else:
         raise AssertionError    # pragma: no cover
 
-    return dollars / seconds
+    return dollars / days
 
 def format_date(date):
     return date.strftime('%m/%d/%y')

@@ -90,12 +90,12 @@ def test_add_budget(fresh_test_db):
 
         budget = two_cents.get_budget(session, 'cherries')
         assert budget.balance == 0
-        assert budget.allowance == approx(1.62557e-06, 1e-11)
+        assert budget.allowance == approx(50 / 356)
         assert budget.last_update == test_dates['today']
 
         budget = two_cents.get_budget(session, 'peaches')
         assert budget.balance == 30
-        assert budget.allowance == approx(7.80274e-06, 1e-11)
+        assert budget.allowance == approx(20 * 12 / 356)
         assert budget.last_update == test_dates['today']
 
 def test_reassign_payments(fresh_test_db):

@@ -191,10 +191,10 @@ def test_parse_dollars(fresh_test_db):
 def test_parse_allowance(fresh_test_db):
     f = two_cents.parse_allowance
 
-    assert f('5 per day') == approx(5.787037037037037e-05, 1e-10)
-    assert f('$5 per day') == approx(5.787037037037037e-05, 1e-10)
-    assert f('150 per month') == approx(5.852059925093633e-05, 1e-10)
-    assert f('100 per year') == approx(3.2511444028297963e-06, 1e-10)
+    assert f('5 per day') == approx(5)
+    assert f('$5 per day') == approx(5)
+    assert f('150 per month') == approx(150 * 12 / 356)
+    assert f('100 per year') == approx(100 / 356)
     assert f('') == 0
 
     with pytest.raises(two_cents.AllowanceError):
