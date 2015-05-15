@@ -33,13 +33,13 @@ class Budget (Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False, unique=True)
     balance = Column(Dollars, nullable=False)
-    allowance = Column(String)
+    allowance = Column(DollarsPerSec)
     last_update = Column(DateTime, nullable=False)
 
     def __init__(self, name, balance=None, allowance=None):
         self.name = name
         self.balance = int(balance or 0)
-        self.allowance = allowance or ''
+        self.allowance = parse_allowance(allowance or '')
         self.last_update = now()
 
         if name in ('skip', 'ignore'):
@@ -67,7 +67,7 @@ class Budget (Base):
         if self.balance >= 0:
             return 0
 
-        dollars_per_second = parse_allowance(self.allowance)
+        dollars_per_second = self.allowance
         dollars_per_day = dollars_per_second * seconds_per_day
 
         if dollars_per_day <= 0:
@@ -79,14 +79,11 @@ class Budget (Base):
         this_update = now()
         last_update = self.last_update
 
-        dollars_per_second = parse_allowance(self.allowance)
+        dollars_per_second = self.allowance
         seconds_elapsed = (this_update - last_update).total_seconds()
 
         self.balance += dollars_per_second * seconds_elapsed
         self.last_update = this_update
-
-        session = Session.object_session(self)
-        session.commit()
 
 
 def get_budget(session, name):
@@ -269,7 +266,6 @@ class Bank (Base):
                     self.payments.append(payment)
 
         self.last_update = now()
-        session.commit()
 
     @property
     def title(self):
@@ -342,9 +338,10 @@ def transfer_money(dollars, from_budget, to_budget):
     from_budget.balance -= dollars
     to_budget.balance += dollars
 
-def transfer_allowance(dollars_per_time, from_budget, to_budget):
-    from_budget.balance -= dollars
-    to_budget.balance += dollars
+def transfer_allowance(allowance, from_budget, to_budget):
+    dollars_per_second = parse_allowance(allowance)
+    from_budget.allowance -= dollars_per_second
+    to_budget.allowance += dollars_per_second
 
 def parse_dollars(value):
     """

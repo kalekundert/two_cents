@@ -80,22 +80,22 @@ def test_add_budget(fresh_test_db):
 
         budget = two_cents.get_budget(session, 'apples')
         assert budget.balance == 0
-        assert budget.allowance == ''
+        assert budget.allowance == 0
         assert budget.last_update == test_dates['today']
 
         budget = two_cents.get_budget(session, 'bananas')
         assert budget.balance == 100
-        assert budget.allowance == ''
+        assert budget.allowance == 0
         assert budget.last_update == test_dates['today']
 
         budget = two_cents.get_budget(session, 'cherries')
         assert budget.balance == 0
-        assert budget.allowance == '50 per year'
+        assert budget.allowance == approx(1.62557e-06, 1e-11)
         assert budget.last_update == test_dates['today']
 
         budget = two_cents.get_budget(session, 'peaches')
         assert budget.balance == 30
-        assert budget.allowance == '20 per month'
+        assert budget.allowance == approx(7.80274e-06, 1e-11)
         assert budget.last_update == test_dates['today']
 
 def test_reassign_payments(fresh_test_db):
@@ -176,8 +176,8 @@ def test_update_budgets(fresh_test_db):
 
     with open_test_db() as session:
         fill_database(session)
-        two_cents.get_budget(session, 'groceries').allowance = '150 per month'
-        two_cents.get_budget(session, 'restaurants').allowance = '100 per month'
+        two_cents.get_budget(session, 'groceries').allowance = two_cents.parse_allowance('150 per month')
+        two_cents.get_budget(session, 'restaurants').allowance = two_cents.parse_allowance('100 per month')
 
     run_two_cents('-D', 'groceries', 'restaurants')
 

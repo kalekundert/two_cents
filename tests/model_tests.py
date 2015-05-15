@@ -56,8 +56,8 @@ def test_budget_schema(fresh_test_db):
         with pytest.raises(two_cents.UserError):
             add_budget(session, 'ignore')
 
-        budgets[0].allowance = '150 per month'
-        budgets[1].allowance = '100 per month'
+        budgets[0].allowance = two_cents.parse_allowance('150 per month')
+        budgets[1].allowance = two_cents.parse_allowance('100 per month')
 
         assert budgets[0].recovery_time == 0
         assert budgets[1].recovery_time == 30
