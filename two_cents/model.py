@@ -33,7 +33,7 @@ class Budget (Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False, unique=True)
     balance = Column(Dollars, nullable=False)
-    allowance = Column(DollarsPerDay)
+    allowance = Column(DollarsPerDay, nullable=False)
     last_update = Column(DateTime, nullable=False)
 
     def __init__(self, name, balance=None, allowance=None):
