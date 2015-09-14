@@ -154,6 +154,9 @@ def test_suggest_allowance(fresh_test_db):
     with open_test_db() as session:
         bank, payments, budgets = fill_database(session)
 
+        assert two_cents.suggest_allowance(session, budgets[0]) == 0
+        assert two_cents.suggest_allowance(session, budgets[1]) == 0
+
         payments[0].assign(budgets[0].name)
         payments[1].assign(budgets[1].name)
 

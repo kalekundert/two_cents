@@ -10,8 +10,9 @@ Usage:
     two_cents describe-budgets [-e]
     two_cents download-payments [-I]
     two_cents reassign-payment <payment-id> <budget>
+    two_cents show-allowance [<budgets>...]
     two_cents show-payments [<budget>]
-    two_cents suggest-allowance [<budget>]
+    two_cents suggest-allowance [<budgets>...]
     two_cents transfer-allowance <dollars-per-time> <budget-from> <budget-to>
     two_cents transfer-money <dollars> <budget-from> <budget-to>
 
@@ -106,6 +107,11 @@ def main(argv=None, db_path=None):
                         args['<payment-id>'],
                         args['<budget>'],
                 )
+            elif args['show-allowance']:
+                show_allowance(
+                        session,
+                        *args['<budgets>']
+                )
             elif args['show-payments']:
                 show_payments(
                         session,
@@ -114,7 +120,7 @@ def main(argv=None, db_path=None):
             elif args['suggest-allowance']:
                 suggest_allowance(
                         session,
-                        args['<budget>'],
+                        *args['<budgets>']
                 )
             elif args['transfer-money']:
                 transfer_money(
@@ -193,27 +199,25 @@ def reassign_payment(session, payment_id, budget):
     payment = two_cents.get_payment(session, payment_id)
     payment.assign(budget)
 
+def show_allowance(session, *budgets):
+    with print_table('lr') as table:
+        for budget in two_cents.get_budgets(session, *budgets):
+            table.add_row([
+                    budget.name.title(),
+                    budget.pretty_allowance,
+            ])
+
 def show_payments(session, budget=None):
     for payment in two_cents.get_payments(session, budget):
         show_payment(payment)
         print()
 
-def suggest_allowance(session, budget=None):
-    import prettytable
-
-    # Decide which budgets to consider.  If one budget is specifically named, 
-    # only consider it, otherwise consider all the budgets.
-
-    if budget is not None:
-        budgets = [two_cents.get_budget(session, budget)]
-    else:
-        budgets = two_cents.get_budgets(session)
-
+def suggest_allowance(session, *budgets):
     # Populate a table with suggested allowances for each budget, then display 
     # that table.
 
     with print_table('lr') as table:
-        for budget in budgets:
+        for budget in two_cents.get_budgets(session, *budgets):
             table.add_row([
                     budget.name.title(),
                     "{}/mo".format(two_cents.format_dollars(

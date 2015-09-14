@@ -55,6 +55,10 @@ class Budget (Base):
         return format_dollars(self.balance)
 
     @property
+    def pretty_allowance(self):
+        return format_dollars(self.allowance * days_per_month) + '/mo'
+
+    @property
     def recovery_time(self):
         """
         Return the number of days it will take this account to reach a positive 
@@ -89,8 +93,10 @@ def get_budget(session, name):
     except sqlalchemy.orm.exc.NoResultFound:
         raise NoSuchBudget(name)
 
-def get_budgets(session):
-    return session.query(Budget).all()
+def get_budgets(session, *names):
+    budgets = session.query(Budget).all()
+    if names: budgets = [x for x in budgets if x.name in names]
+    return budgets
 
 def get_num_budgets(session):
     return session.query(Budget).count()
@@ -339,10 +345,17 @@ def suggest_allowance(session, budget):
     dollars per month.
     """
     payments = get_payments(session, budget.name)
+
+    if not payments:
+        return 0
+
     elapsed_money = sum(x.value for x in payments)
     elapsed_time = now().date() - min(x.date for x in payments)
-    try: return -elapsed_money / elapsed_time.days * days_per_month
-    except ZeroDivisionError: return 0
+
+    if not elapsed_time.days:
+        return 0
+
+    return -elapsed_money / elapsed_time.days * days_per_month
 
 def transfer_money(dollars, from_budget, to_budget):
     from_budget.balance -= dollars
