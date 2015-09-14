@@ -11,6 +11,7 @@ Usage:
     two_cents download-payments [-I]
     two_cents reassign-payment <payment-id> <budget>
     two_cents show-payments [<budget>]
+    two_cents suggest-allowance [<budget>]
     two_cents transfer-allowance <dollars-per-time> <budget-from> <budget-to>
     two_cents transfer-money <dollars> <budget-from> <budget-to>
 
@@ -60,6 +61,7 @@ Options:
 
 import two_cents
 import appdirs; dirs = appdirs.AppDirs('two_cents', 'username')
+from contextlib import contextmanager
 
 def main(argv=None, db_path=None):
     try:
@@ -106,6 +108,11 @@ def main(argv=None, db_path=None):
                 )
             elif args['show-payments']:
                 show_payments(
+                        session,
+                        args['<budget>'],
+                )
+            elif args['suggest-allowance']:
+                suggest_allowance(
                         session,
                         args['<budget>'],
                 )
@@ -190,6 +197,28 @@ def show_payments(session, budget=None):
     for payment in two_cents.get_payments(session, budget):
         show_payment(payment)
         print()
+
+def suggest_allowance(session, budget=None):
+    import prettytable
+
+    # Decide which budgets to consider.  If one budget is specifically named, 
+    # only consider it, otherwise consider all the budgets.
+
+    if budget is not None:
+        budgets = [two_cents.get_budget(session, budget)]
+    else:
+        budgets = two_cents.get_budgets(session)
+
+    # Populate a table with suggested allowances for each budget, then display 
+    # that table.
+
+    with print_table('lr') as table:
+        for budget in budgets:
+            table.add_row([
+                    budget.name.title(),
+                    "{}/mo".format(two_cents.format_dollars(
+                            two_cents.suggest_allowance(session, budget))),
+            ])
 
 def transfer_money(session, dollars, budget_from, budget_to):
     two_cents.transfer_money(
@@ -323,27 +352,37 @@ def show_budgets(session):
     """
     Print a line briefly summarizing each budget.
     """
-    from math import log10
+    
+    # I had to hack table.right_padding_width a little to format the recovery 
+    # time the way I wanted.  Basically, I use table.right_padding_width to add 
+    # manual padding, then I remove the padding once the table is complete.
 
-    budgets = two_cents.get_budgets(session)
-    name_width, balance_width = 0, 0
+    with print_table('lr') as table:
+        for budget in two_cents.get_budgets(session):
+            table.add_row([
+                budget.name.title() + ' ' * table.right_padding_width,
+                budget.pretty_balance + ' ',
+                '' if budget.recovery_time <= 0 else 
+                    '({} {})'.format(budget.recovery_time,
+                        'day' if budget.recovery_time == 1 else 'days')
+            ])
+        table.right_padding_width = 0
 
-    for budget in budgets:
-        name_width = max(len(budget.name), name_width)
-        balance_width = max(len(budget.pretty_balance), balance_width)
+@contextmanager
+def print_table(alignments=None):
+    import prettytable
 
-    row_template = '{{:<{}}} {{:>{}}}'.format(name_width+1, balance_width)
+    table = prettytable.PrettyTable()
+    table.set_style(prettytable.PLAIN_COLUMNS)
+    table.header = False
 
-    for budget in two_cents.get_budgets(session):
-        name = budget.name.title()
-        balance = budget.pretty_balance
-        row = row_template.format(name, balance)
+    yield table
 
-        if budget.recovery_time > 0:
-            row += ' ({} {})'.format(
-                    budget.recovery_time,
-                    'day' if budget.recovery_time == 1 else 'days')
-        print(row)
+    if alignments is not None:
+        for column, alignment in zip(table.field_names, alignments):
+            table.align[column] = alignment
+
+    print(table)
 
 def show_payment(payment, indent=''):
     import textwrap

@@ -181,9 +181,9 @@ def get_payment(session, id):
     if payment is None: raise NoSuchPayment(id)
     else: return payment
 
-def get_payments(session, budget=None):
-    if budget is not None:
-        return session.query(Payment).filter_by(assignment=budget).all()
+def get_payments(session, budget_name=None):
+    if budget_name is not None:
+        return session.query(Payment).filter_by(assignment=budget_name).all()
     else:
         return session.query(Payment).all()
 
@@ -331,14 +331,27 @@ def update_allowances(session):
     for budget in get_budgets(session):
         budget.update_allowance()
 
+def suggest_allowance(session, budget):
+    """
+    Suggest a reasonable allowance for the given account its rate of spending 
+    to date.  More specifically, this function calculates the average amount of 
+    spending for the given account and returns that information in units of 
+    dollars per month.
+    """
+    payments = get_payments(session, budget.name)
+    elapsed_money = sum(x.value for x in payments)
+    elapsed_time = now().date() - min(x.date for x in payments)
+    try: return -elapsed_money / elapsed_time.days * days_per_month
+    except ZeroDivisionError: return 0
+
 def transfer_money(dollars, from_budget, to_budget):
     from_budget.balance -= dollars
     to_budget.balance += dollars
 
 def transfer_allowance(allowance, from_budget, to_budget):
-    dollars_per_second = parse_allowance(allowance)
-    from_budget.allowance -= dollars_per_second
-    to_budget.allowance += dollars_per_second
+    dollars_per_day = parse_allowance(allowance)
+    from_budget.allowance -= dollars_per_day
+    to_budget.allowance += dollars_per_day
 
 def parse_dollars(value):
     """
@@ -363,29 +376,29 @@ def parse_allowance(allowance):
     Convert the given allowance to dollars per day.
 
     An allowance is a string that represents some amount of money per time.  
-    Each allowance is expected to have three words.  The first is a dollar 
-    amount (which may be preceded by a dollar sign), the second is the literal 
-    string "per", and the third is one of "day", "month", or "year".  If the 
-    given allowance is properly formatted, this function returns a float in 
+    Each allowance is expected to have three tokens.  The first is a dollar 
+    amount (which may be preceded by a dollar sign), the second is either "/" 
+    or " per ", and the third is one of "day", "month", "mo", or "year".  If 
+    the given allowance is properly formatted, this function returns a float in 
     units of dollars per day.  Otherwise an AllowanceError is raised.
     """
 
     if allowance == '':
         return 0
 
-    allowance_pattern = re.compile('(\$?[0-9.]+) per (day|month|year)')
+    allowance_pattern = re.compile('(\$?[0-9.]+)(/| per )(day|month|mo|year)')
     allowance_match = allowance_pattern.match(allowance)
 
     if not allowance_match:
         raise AllowanceError(allowance, "doesn't match '<money> per <day|month|year>'")
 
-    money_token, time_token = allowance_match.groups()
+    money_token, sep, time_token = allowance_match.groups()
 
     dollars = parse_dollars(money_token)
 
     if time_token == 'day':
         days = 1
-    elif time_token == 'month':
+    elif time_token in ('month', 'mo'):
         days = days_per_month
     elif time_token == 'year':
         days = days_per_year

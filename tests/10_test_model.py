@@ -150,6 +150,21 @@ def test_bank_schema(fresh_test_db):
         with pytest.raises(two_cents.UserError):
             add_bank(session, 'nonexistant_scraper')
 
+def test_suggest_allowance(fresh_test_db):
+    with open_test_db() as session:
+        bank, payments, budgets = fill_database(session)
+
+        payments[0].assign(budgets[0].name)
+        payments[1].assign(budgets[1].name)
+
+        assert two_cents.suggest_allowance(session, budgets[0]) == 0
+        assert two_cents.suggest_allowance(session, budgets[1]) == 0
+
+        change_date('tomorrow')
+
+        assert two_cents.suggest_allowance(session, budgets[0]) == approx(2966.666666666667)
+        assert two_cents.suggest_allowance(session, budgets[1]) == approx(296.6666666666667)
+
 def test_transfer_money(fresh_test_db):
     with open_test_db() as session:
         bank, payments, budgets = fill_database(session)
@@ -165,6 +180,25 @@ def test_transfer_money(fresh_test_db):
         two_cents.transfer_money(50, budgets[1], budgets[0])
         assert budgets[0].balance == 0
         assert budgets[1].balance == 0
+
+def test_transfer_allowance(fresh_test_db):
+    from two_cents import parse_allowance
+
+    with open_test_db() as session:
+        bank, payments, budgets = fill_database(session)
+
+        budgets[0].allowance = parse_allowance('150 per month')
+        budgets[1].allowance = parse_allowance('100 per month')
+
+        two_cents.transfer_allowance('', budgets[0], budgets[1])
+
+        assert budgets[0].allowance == approx(parse_allowance('150 per month'))
+        assert budgets[1].allowance == approx(parse_allowance('100 per month'))
+
+        two_cents.transfer_allowance('30 per month', budgets[0], budgets[1])
+
+        assert budgets[0].allowance == approx(parse_allowance('120 per month'))
+        assert budgets[1].allowance == approx(parse_allowance('130 per month'))
 
 def test_parse_dollars(fresh_test_db):
     f = two_cents.parse_dollars
@@ -193,7 +227,9 @@ def test_parse_allowance(fresh_test_db):
 
     assert f('5 per day') == approx(5)
     assert f('$5 per day') == approx(5)
+    assert f('$5/day') == approx(5)
     assert f('150 per month') == approx(150 * 12 / 356)
+    assert f('150 per mo') == approx(150 * 12 / 356)
     assert f('100 per year') == approx(100 / 356)
     assert f('') == 0
 

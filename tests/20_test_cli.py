@@ -209,7 +209,7 @@ def test_update_budgets(fresh_test_db):
         assert two_cents.get_payment(session, 4).assignment == 'ignore'
 
     assert run_two_cents('-D') == '''\
-Groceries     $50.00
-Restaurants  -$10.00 (3 days)
+Groceries           $50.00         
+Restaurants        -$10.00 (3 days)
 '''
 
