@@ -4,9 +4,10 @@
 Maintain a budget that updates every day.
 
 Usage:
-    two_cents [-d] [-D] [-I]
+    two_cents [-d] [-D] [-I] [-h] [-v]
     two_cents add-bank <name> [-u <command>] [-p <command>]
     two_cents add-budget <name> [-b <dollars>] [-a <dollars-per-time>]
+    two_cents describe-budgets [-e]
     two_cents download-payments [-I]
     two_cents reassign-payment <payment-id> <budget>
     two_cents show-payments [<budget>]
@@ -45,14 +46,33 @@ Options:
   -a, --initial-allowance <dollars-per-time>
         When adding a new budget, specify how quickly money should accumulate 
         in that budget.
+
+  -e, --edit
+        Indicate that you want to create or update a description of your 
+        budgeting scheme.
+
+  -h, --help
+        Print out this message.
+        
+  -v, --version
+        Print the version number of the installed two_cents executable.
 """
 
 import two_cents
+import appdirs; dirs = appdirs.AppDirs('two_cents', 'username')
 
-def main(argv=None, db_path='~/.config/two_cents/budgets.db'):
+def main(argv=None, db_path=None):
     try:
         import docopt
         args = docopt.docopt(__doc__, argv)
+
+        if args['--version']:
+            print('two_cents 0.0')
+            raise SystemExit
+
+        if db_path is None:
+            import os
+            db_path = os.path.join(dirs.user_config_dir, 'budgets.db')
 
         with two_cents.open_db(db_path) as session:
             if args['add-bank']:
@@ -68,6 +88,10 @@ def main(argv=None, db_path='~/.config/two_cents/budgets.db'):
                         name=args['<name>'],
                         initial_balance=args['--initial-balance'],
                         initial_allowance=args['--initial-allowance'],
+                )
+            elif args['describe-budgets']:
+                describe_budgets(
+                        edit=args['--edit'],
                 )
             elif args['download-payments']:
                 download_payments(
@@ -95,7 +119,7 @@ def main(argv=None, db_path='~/.config/two_cents/budgets.db'):
             else:
                 update_budgets(
                         session,
-                        download=not args['--no-download'],
+                        download=args['--download'] or not args['--no-download'],
                         interactive=not args['--no-interaction'],
                 )
     except two_cents.UserError as error:
@@ -138,11 +162,24 @@ def add_budget(session, name, initial_balance, initial_allowance):
     budget = two_cents.Budget(name, initial_balance, initial_allowance)
     session.add(budget)
 
+def describe_budgets(edit=False):
+    import os
+    import subprocess
+
+    description_path = os.path.join(dirs.user_config_dir, 'description.txt')
+
+    if edit or not os.path.exists(description_path):
+        editor = os.environ.get('EDITOR', 'vi')
+        subprocess.call((editor, description_path))
+    else:
+        with open(description_path) as file:
+            print(file.read().strip())
+
 def download_payments(session, interactive=True):
     two_cents.download_payments(
             session,
             get_username_prompter(interactive),
-            get_username_prompter(interactive),
+            get_password_prompter(interactive),
     )
 
 def reassign_payment(session, payment_id, budget):
@@ -251,8 +288,8 @@ def assign_payments(session):
                     payment.assign(command)
                     break
 
-                except two_cents.AssignmentError as error:
-                    print(error.raw_message)
+                except two_cents.UserError as error:
+                    print(error.message)
 
             print()
 
