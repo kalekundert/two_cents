@@ -30,6 +30,10 @@ setup(
     },
     include_package_data=True,
     install_requires=[
+        'SQLAlchemy',
+        'docopt==0.6.2',
+        'ofxparse',
+        'selenium',
     ],
     zip_safe=False,
     keywords=[
