@@ -19,7 +19,7 @@ setup(
     version=version,
     author='Kale Kundert',
     author_email='kale@thekunderts.net',
-    description='',
+    description="A program to help you manage your budget.",
     long_description=readme,
     url='https://github.com/kalekundert/two_cents',
     packages=[
