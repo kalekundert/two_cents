@@ -6,6 +6,7 @@ import datetime
 import tempfile
 import ofxparse
 import os
+import warnings
 
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
@@ -128,7 +129,9 @@ class WellsFargo:
         for ofx_path in os.listdir(ofx_dir):
             ofx_path = os.path.join(ofx_dir, ofx_path)
             with open(ofx_path, 'rb') as ofx_file:
-                ofx = ofxparse.OfxParser.parse(ofx_file)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    ofx = ofxparse.OfxParser.parse(ofx_file)
                 accounts += ofx.accounts
 
         return accounts
