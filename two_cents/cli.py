@@ -10,9 +10,10 @@ Usage:
     two_cents describe-budgets [-e]
     two_cents download-payments [-I]
     two_cents reassign-payment <payment-id> <budget>
+    two_cents set-allowance <budget> <allowance>
     two_cents show-allowance [<budgets>...]
     two_cents show-payments [<budget>]
-    two_cents suggest-allowance [<budgets>...]
+    two_cents suggest-allowance [<budgets>...] [-s]
     two_cents transfer-allowance <dollars-per-time> <budget-from> <budget-to>
     two_cents transfer-money <dollars> <budget-from> <budget-to>
 
@@ -48,6 +49,10 @@ Options:
   -a, --initial-allowance <dollars-per-time>
         When adding a new budget, specify how quickly money should accumulate 
         in that budget.
+
+  -s, --set-suggested-allowance
+        Set the allowances for the relevant budgets to their suggested values 
+        (based on past spending).
 
   -e, --edit
         Indicate that you want to create or update a description of your 
@@ -107,10 +112,16 @@ def main(argv=None, db_path=None):
                         args['<payment-id>'],
                         args['<budget>'],
                 )
+            elif args['set-allowance']:
+                set_allowance(
+                        session,
+                        args['<budget>'],
+                        args['<allowance>'],
+                )
             elif args['show-allowance']:
                 show_allowance(
                         session,
-                        *args['<budgets>']
+                        args['<budgets>'],
                 )
             elif args['show-payments']:
                 show_payments(
@@ -120,7 +131,8 @@ def main(argv=None, db_path=None):
             elif args['suggest-allowance']:
                 suggest_allowance(
                         session,
-                        *args['<budgets>']
+                        args['<budgets>'],
+                        args['--set-suggested-allowance'],
                 )
             elif args['transfer-money']:
                 transfer_money(
@@ -199,7 +211,11 @@ def reassign_payment(session, payment_id, budget):
     payment = two_cents.get_payment(session, payment_id)
     payment.assign(budget)
 
-def show_allowance(session, *budgets):
+def set_allowance(session, budget, allowance):
+    budget = two_cents.get_budget(session, budget)
+    budget.allowance = two_cents.parse_allowance(allowance)
+
+def show_allowance(session, budgets):
     with print_table('lr') as table:
         for budget in two_cents.get_budgets(session, *budgets):
             table.add_row([
@@ -212,7 +228,7 @@ def show_payments(session, budget=None):
         show_payment(payment)
         print()
 
-def suggest_allowance(session, *budgets):
+def suggest_allowance(session, budgets, set=False):
     # Populate a table with suggested allowances for each budget, then display 
     # that table.
 
@@ -223,6 +239,10 @@ def suggest_allowance(session, *budgets):
                     "{}/mo".format(two_cents.format_dollars(
                             two_cents.suggest_allowance(session, budget))),
             ])
+
+    if set:
+        for budget in two_cents.get_budgets(session, *budgets):
+            budget.allowance = two_cents.suggest_allowance(session, budget)
 
 def transfer_money(session, dollars, budget_from, budget_to):
     two_cents.transfer_money(
