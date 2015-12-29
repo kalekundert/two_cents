@@ -35,6 +35,7 @@ setup(
         'ofxparse',
         'docopt==0.6.2',
         'appdirs',
+        'prettytable',
     ],
     zip_safe=False,
     keywords=[
