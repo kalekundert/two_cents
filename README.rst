@@ -25,6 +25,12 @@ Two Cents is available on PyPI, so you can install it with ``pip``::
 
    pip install two_cents
 
+Most of the dependencies will be installed automatically by ``pip``, but you 
+will probably have to install ``Xvfb`` (X Virtual Frame Buffer) from your 
+package manager.  On Fedora, the command is::
+
+   $ sudo dnf install xorg-x11-server-Xvfb
+
 Basic Usage
 -----------
 The first step is to tell Two Cents about your bank.  Currently only Wells 
