@@ -74,8 +74,8 @@ download new transactions in the background every hour or so::
 
 The ``-I`` command prevents Two Cents from expecting any input on stdin.  You 
 also need to ensure that the username and password commands you provided will 
-work without your input.  For example, if you used ``gpg``, you will need to be 
-running an agent with your unlocked private key.
+work without your input.  For example, if you used ``gpg``, you will need to 
+run an agent with your unlocked private key.
 
 Once your account activity is being downloaded in the background, write a 
 simple shell function that will call Two Cents with the ``-D`` option unless 
