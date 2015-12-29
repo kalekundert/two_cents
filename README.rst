@@ -35,7 +35,7 @@ your most recent activity.  Your login information is stored locally and is
 never sent to any site other than your bank.  If you don't mind storing your 
 password in plaintext, use the echo command::
 
-   Username: echo "jane doe"
+   Username: echo "alice"
    Password: echo "pa55w0rd"
 
 Otherwise, provide a command like ``gpg`` or ``gnome-keyring`` that can store 
