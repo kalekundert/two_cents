@@ -32,6 +32,7 @@ setup(
     install_requires=[
         'SQLAlchemy',
         'selenium',
+        'xvfbwrapper',
         'ofxparse',
         'docopt==0.6.2',
         'appdirs',
