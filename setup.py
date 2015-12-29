@@ -14,12 +14,11 @@ distutils.core.setup(
         packages=['two_cents'],
         install_requires=[
             'SQLAlchemy==1.0.4',
-            'beautifulsoup4==4.3.2',
             'docopt==0.6.2',
             'ofxparse==0.14',
+            'selenium',
             'pytest==2.7.0',
             'pytest-cov==1.8.1',
-            'requests==2.7.0',
         ],
         entry_points = {
             'console_scripts': ['two_cents=two_cents.cli:main'],
