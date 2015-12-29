@@ -16,6 +16,9 @@ Finally, it will display the balance for each budget.  For budgets with
 negative balances, it will also display an estimate for how long it will take 
 for the budget to return to the black.
 
+.. image:: https://travis-ci.org/kalekundert/two_cents.svg?branch=master
+    :target: https://travis-ci.org/kalekundert/two_cents
+
 Installation
 ------------
 Two Cents is available on PyPI, so you can install it with ``pip``::
