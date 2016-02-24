@@ -362,9 +362,8 @@ def transfer_money(dollars, from_budget, to_budget):
     to_budget.balance += dollars
 
 def transfer_allowance(allowance, from_budget, to_budget):
-    dollars_per_day = parse_allowance(allowance)
-    from_budget.allowance -= dollars_per_day
-    to_budget.allowance += dollars_per_day
+    from_budget.allowance -= allowance
+    to_budget.allowance += allowance
 
 def parse_dollars(value):
     """

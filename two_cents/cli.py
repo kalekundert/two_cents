@@ -65,9 +65,11 @@ Options:
         Print the version number of the installed two_cents executable.
 """
 
-import two_cents
-import appdirs; dirs = appdirs.AppDirs('two_cents', 'username')
+import two_cents, appdirs
 from contextlib import contextmanager
+from pprint import pprint
+
+dirs = appdirs.AppDirs('two_cents', 'username')
 
 def main(argv=None, db_path=None):
     try:
@@ -133,6 +135,13 @@ def main(argv=None, db_path=None):
                         session,
                         args['<budgets>'],
                         args['--set-suggested-allowance'],
+                )
+            elif args['transfer-allowance']:
+                transfer_allowance(
+                        session,
+                        args['<dollars-per-time>'],
+                        args['<budget-from>'],
+                        args['<budget-to>'],
                 )
             elif args['transfer-money']:
                 transfer_money(
@@ -243,6 +252,12 @@ def suggest_allowance(session, budgets, set=False):
     if set:
         for budget in two_cents.get_budgets(session, *budgets):
             budget.allowance = two_cents.suggest_allowance(session, budget)
+
+def transfer_allowance(session, allowance, budget_from, budget_to):
+    two_cents.transfer_allowance(
+            two_cents.parse_allowance(allowance),
+            two_cents.get_budget(session, budget_from),
+            two_cents.get_budget(session, budget_to))
 
 def transfer_money(session, dollars, budget_from, budget_to):
     two_cents.transfer_money(

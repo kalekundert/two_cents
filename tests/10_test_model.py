@@ -193,12 +193,13 @@ def test_transfer_allowance(fresh_test_db):
         budgets[0].allowance = parse_allowance('150 per month')
         budgets[1].allowance = parse_allowance('100 per month')
 
-        two_cents.transfer_allowance('', budgets[0], budgets[1])
+        two_cents.transfer_allowance(0, budgets[0], budgets[1])
 
         assert budgets[0].allowance == approx(parse_allowance('150 per month'))
         assert budgets[1].allowance == approx(parse_allowance('100 per month'))
 
-        two_cents.transfer_allowance('30 per month', budgets[0], budgets[1])
+        two_cents.transfer_allowance(
+                parse_allowance('30 per month'), budgets[0], budgets[1])
 
         assert budgets[0].allowance == approx(parse_allowance('120 per month'))
         assert budgets[1].allowance == approx(parse_allowance('130 per month'))
