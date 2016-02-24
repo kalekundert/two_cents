@@ -221,7 +221,7 @@ class Bank (Base):
         self.password_command = None
         self.last_update = now()
 
-    def download_payments(self, username_callback, password_callback):
+    def download_payments(self, username_callback, password_callback, show_browser=False):
         """
         Download new transactions from this bank.
         """
@@ -253,7 +253,7 @@ class Bank (Base):
 
         session = Session.object_session(self)
         scraper_class = scraper_classes[self.scraper_key]
-        scraper = scraper_class(username, password)
+        scraper = scraper_class(username, password, show_browser)
         start_date = self.last_update - datetime.timedelta(days=30)
 
         for account in scraper.download(start_date):

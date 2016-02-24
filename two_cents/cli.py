@@ -209,7 +209,7 @@ def describe_budgets(edit=False):
         with open(description_path) as file:
             print(file.read().strip())
 
-def download_payments(session, interactive=True):
+def download_payments(session, interactive=True, show_browser=False):
     two_cents.download_payments(
             session,
             get_username_prompter(interactive),

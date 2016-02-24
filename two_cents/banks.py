@@ -10,7 +10,8 @@ import warnings
 
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import Select
+from selenium.webdriver.support.ui import Select, WebDriverWait
+from selenium.webdriver.support.expected_conditions import staleness_of
 from selenium.common.exceptions import NoSuchElementException
 
 # Debug Mode
@@ -60,6 +61,12 @@ def firefox_driver(download_dir, gui=False, max_load_time=10):
         driver.close()
         xvfb.stop()
 
+@contextlib.contextmanager
+def wait_for_page_load(driver, timeout=30):
+    old_page = driver.find_element_by_tag_name('html')
+    yield
+    WebDriverWait(driver, timeout).until(staleness_of(old_page))
+
 
 class WellsFargo:
 
@@ -92,17 +99,20 @@ class WellsFargo:
             # Login to Wells Fargo's website.
             driver.get('https://www.wellsfargo.com/')
 
-            username_form = driver.find_element_by_id('userid')
-            password_form = driver.find_element_by_id('password')
-            username_form.send_keys(self.username)
-            password_form.send_keys(self.password)
-            password_form.submit()
+            with wait_for_page_load(driver):
+                username_form = driver.find_element_by_id('userid')
+                password_form = driver.find_element_by_id('password')
+                username_form.send_keys(self.username)
+                password_form.send_keys(self.password)
+                password_form.submit()
 
             # Go to the "Account Activity" page.
-            driver.find_element_by_link_text("Account Activity").click()
+            with wait_for_page_load(driver):
+                driver.find_element_by_link_text("Account Activity").click()
 
             # Go to the "Download" page.
-            driver.find_element_by_link_text("Download Account Activity").click()
+            with wait_for_page_load(driver):
+                driver.find_element_by_link_text("Download Account Activity").click()
 
             # Download account activity in the OFX format.
             for i in itertools.count():
