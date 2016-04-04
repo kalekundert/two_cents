@@ -31,35 +31,40 @@ def firefox_driver(download_dir, gui=False, max_load_time=10):
         xvfb = Xvfb()
         xvfb.start()
 
-    # Change some of the Firefox's default preferences.  In particular, 
-    # configure it to automatically download files without asking questions.
+    try:
 
-    profile = webdriver.FirefoxProfile()
-    profile.set_preference('browser.download.folderList',2)
-    profile.set_preference('browser.download.manager.showWhenStarting',False)
-    profile.set_preference('browser.download.dir', download_dir)
-    profile.set_preference('browser.helperApps.neverAsk.saveToDisk','application/vnd.intu.QFX')
-    
-    # If the GUI is disabled, don't bother downloading CSS or images.
+        # Change some of the Firefox's default preferences.  In particular, 
+        # have it automatically download files without asking questions.
 
-    if not gui:
-        profile.set_preference('permissions.default.stylesheet', 2)
-        profile.set_preference('permissions.default.image', 2)
-        profile.set_preference('dom.ipc.plugins.enabled.libflashplayer.so', 'false')
+        profile = webdriver.FirefoxProfile()
+        profile.set_preference('browser.download.folderList',2)
+        profile.set_preference('browser.download.manager.showWhenStarting',False)
+        profile.set_preference('browser.download.dir', download_dir)
+        profile.set_preference('browser.helperApps.neverAsk.saveToDisk','application/vnd.intu.QFX')
+        
+        # If the GUI is disabled, don't bother downloading images, CSS, or 
+        # flash content.
 
-    # Construct and yield a Firefox driver.
+        if not gui:
+            profile.set_preference('permissions.default.image', 2)
+            profile.set_preference('permissions.default.stylesheet', 2)
+            profile.set_preference('dom.ipc.plugins.enabled.libflashplayer.so', 'false')
 
-    driver = webdriver.Firefox(profile)
-    driver.implicitly_wait(max_load_time)
+        # Construct and yield a Firefox driver.
 
-    yield driver
+        driver = webdriver.Firefox(profile)
+        driver.implicitly_wait(max_load_time)
 
-    # If the GUI is disabled, close the browser as soon as the scraping is 
-    # complete.
+        yield driver
 
-    if not gui:
-        driver.close()
-        xvfb.stop()
+    finally:
+
+        # If the GUI is disabled, close the browser as soon as the scraping is 
+        # complete.
+
+        if not gui:
+            driver.close()
+            xvfb.stop()
 
 @contextlib.contextmanager
 def wait_for_page_load(driver, timeout=30):
