@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import appdirs
 import itertools
 import contextlib
 import datetime
@@ -13,6 +14,8 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support.expected_conditions import staleness_of
 from selenium.common.exceptions import NoSuchElementException
+
+dirs = appdirs.AppDirs('two_cents', 'username')
 
 # Debug Mode
 # ==========
@@ -69,7 +72,14 @@ def firefox_driver(download_dir, gui=False, max_load_time=10):
 @contextlib.contextmanager
 def wait_for_page_load(driver, timeout=30):
     old_page = driver.find_element_by_tag_name('html')
-    yield
+    log_path = os.path.join(dirs.user_log_dir, driver.current_url)
+
+    try:
+        yield
+    except:
+        with open(log_path, 'w') as file:
+            file.write(driver.page_source)
+
     WebDriverWait(driver, timeout).until(staleness_of(old_page))
 
 

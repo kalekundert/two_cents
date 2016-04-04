@@ -4,9 +4,10 @@
 Maintain a budget that updates every day.
 
 Usage:
-    two_cents [-d] [-D] [-I] [-h] [-v]
+    two_cents [-d] [-D] [-I] [-g] [-h] [-v]
     two_cents add-bank <name> [-u <command>] [-p <command>]
     two_cents add-budget <name> [-b <dollars>] [-a <dollars-per-time>]
+    two_cents debug-bank-scraper
     two_cents describe-budgets [-e]
     two_cents download-payments [-I]
     two_cents reassign-payment <payment-id> <budget>
@@ -58,6 +59,10 @@ Options:
         Indicate that you want to create or update a description of your 
         budgeting scheme.
 
+  -g, --gui
+        When downloading new transaction data, show the Firefox GUI so you can 
+        watch the scraper work.  This is only useful for debugging.
+
   -h, --help
         Print out this message.
         
@@ -102,6 +107,11 @@ def main(argv=None, db_path=None):
             elif args['describe-budgets']:
                 describe_budgets(
                         edit=args['--edit'],
+                )
+            elif args['debug-bank-scraper']:
+                download_payments(
+                        session,
+                        show_browser=True,
                 )
             elif args['download-payments']:
                 download_payments(
@@ -155,6 +165,7 @@ def main(argv=None, db_path=None):
                         session,
                         download=args['--download'] or not args['--no-download'],
                         interactive=not args['--no-interaction'],
+                        show_browser=args['--gui'],
                 )
     except two_cents.UserError as error:
         print(error)
@@ -214,6 +225,7 @@ def download_payments(session, interactive=True, show_browser=False):
             session,
             get_username_prompter(interactive),
             get_password_prompter(interactive),
+            show_browser=show_browser,
     )
 
 def reassign_payment(session, payment_id, budget):
@@ -265,13 +277,13 @@ def transfer_money(session, dollars, budget_from, budget_to):
             two_cents.get_budget(session, budget_from),
             two_cents.get_budget(session, budget_to))
 
-def update_budgets(session, download=True, interactive=True):
+def update_budgets(session, download=True, interactive=True, show_browser=False):
     if two_cents.get_num_budgets(session) == 0:
         raise two_cents.UserError("No budgets to display.  Use 'two_cents add-budget' to create some.")
 
     if download:
         print("Downloading recent transactions...")
-        download_payments(session, interactive)
+        download_payments(session, interactive, show_browser)
 
     assign_payments(session)
     two_cents.update_allowances(session)

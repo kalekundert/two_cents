@@ -329,9 +329,9 @@ def open_db(path):
     finally:
         session.close()
 
-def download_payments(session, username_callback, password_callback):
+def download_payments(session, username_callback, password_callback, show_browser=False):
     for bank in get_banks(session):
-        bank.download_payments(username_callback, password_callback)
+        bank.download_payments(username_callback, password_callback, show_browser)
 
 def update_allowances(session):
     for budget in get_budgets(session):
