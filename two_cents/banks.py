@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 
 import appdirs
-import itertools
 import contextlib
 import datetime
-import tempfile
+import itertools
 import ofxparse
 import os
+import pathlib
+import tempfile
 import warnings
 
 from selenium import webdriver
+from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.support.ui import Select, WebDriverWait
-from selenium.webdriver.support.expected_conditions import staleness_of
+from selenium.webdriver.support.expected_conditions import staleness_of, element_to_be_clickable
 from selenium.common.exceptions import NoSuchElementException
 
 dirs = appdirs.AppDirs('two_cents', 'username')
@@ -24,7 +27,7 @@ dirs = appdirs.AppDirs('two_cents', 'username')
 # 3. Print out more status updates.
 
 @contextlib.contextmanager
-def firefox_driver(download_dir, gui=False, max_load_time=10):
+def firefox_driver(download_dir, gui=False, max_load_time=30):
     from xvfbwrapper import Xvfb
 
     # If the GUI was not explicitly requested, use the X virtual frame buffer 
@@ -53,9 +56,19 @@ def firefox_driver(download_dir, gui=False, max_load_time=10):
             profile.set_preference('permissions.default.stylesheet', 2)
             profile.set_preference('dom.ipc.plugins.enabled.libflashplayer.so', 'false')
 
+        # Use the Marionette driver, which is required for Firefox >= 47.
+
+        capabilities = DesiredCapabilities.FIREFOX
+        capabilities['marionette'] = True
+
+        # Use the firefox 48 beta binary.  This will be unnecessary once 
+        # firefox 48 is released.
+        from selenium.webdriver.firefox.firefox_binary import FirefoxBinary
+        binary = FirefoxBinary('/home/kale/hacking/third_party/firefox/firefox')
+
         # Construct and yield a Firefox driver.
 
-        driver = webdriver.Firefox(profile)
+        driver = webdriver.Firefox(profile, capabilities=capabilities, firefox_binary=binary)
         driver.implicitly_wait(max_load_time)
 
         yield driver
@@ -69,18 +82,29 @@ def firefox_driver(download_dir, gui=False, max_load_time=10):
             driver.close()
             xvfb.stop()
 
-@contextlib.contextmanager
-def wait_for_page_load(driver, timeout=30):
-    old_page = driver.find_element_by_tag_name('html')
-    log_path = os.path.join(dirs.user_log_dir, driver.current_url)
+def wait_for_element(driver, element_type, element_identifier, timeout=30):
+    wait = WebDriverWait(driver, timeout)
+    wait.until(element_to_be_clickable((element_type, element_identifier)))
 
-    try:
-        yield
-    except:
-        with open(log_path, 'w') as file:
-            file.write(driver.page_source)
+    # It shouldn't be necessary to manually sleep here, and I suspect that it 
+    # only is necessary because of a bug in the Marionette driver.  For one 
+    # thing, the line just above is supposed to wait until the relevant element 
+    # is clickable.  For another, the driver has an implicit wait set anyways, 
+    # so it should wait for a few seconds for elements to load.  But despite 
+    # that, immediately calling click() on the element returned by this method 
+    # does nothing.
+    import time; time.sleep(1)
 
-    WebDriverWait(driver, timeout).until(staleness_of(old_page))
+    return driver.find_element(element_type, element_identifier)
+
+def wait_for_element_by_id(driver, id, timeout=30):
+    return wait_for_element(driver, By.ID, id, timeout)
+
+def wait_for_element_by_name(driver, name, timeout=30):
+    return wait_for_element(driver, By.NAME, name, timeout)
+
+def wait_for_element_by_link_text(driver, link_text, timeout=30):
+    return wait_for_element(driver, By.LINK_TEXT, link_text, timeout)
 
 
 class WellsFargo:
@@ -94,7 +118,7 @@ class WellsFargo:
         # Create a temporary directory that the scraper can download all the 
         # financial data into.
 
-        with tempfile.TemporaryDirectory() as ofx_dir:
+        with tempfile.TemporaryDirectory(prefix='two_cents_') as ofx_dir:
 
             # Download financial data from Wells Fargo, then parse it and make 
             # a list of transactions for each account.
@@ -113,40 +137,44 @@ class WellsFargo:
 
             # Login to Wells Fargo's website.
             driver.get('https://www.wellsfargo.com/')
-
-            with wait_for_page_load(driver):
-                username_form = driver.find_element_by_id('userid')
-                password_form = driver.find_element_by_id('password')
-                username_form.send_keys(self.username)
-                password_form.send_keys(self.password)
-                password_form.submit()
+            username_form = wait_for_element_by_id(driver, 'userid')
+            password_form = wait_for_element_by_id(driver, 'password')
+            username_form.send_keys(self.username)
+            password_form.send_keys(self.password)
+            password_form.submit()
 
             # Go to the "Account Activity" page.
-            with wait_for_page_load(driver):
-                driver.find_element_by_link_text("Account Activity").click()
+            wait_for_element_by_link_text(driver, "Account Activity").click()
 
             # Go to the "Download" page.
-            with wait_for_page_load(driver):
-                driver.find_element_by_link_text("Download Account Activity").click()
+            wait_for_element_by_link_text(driver, "Download Account Activity").click()
 
             # Download account activity in the OFX format.
             for i in itertools.count():
 
                 # Pick the next account to download.
-                accounts = driver.find_element_by_name('primaryKey')
-                try: account = Select(accounts).select_by_index(i)
-                except NoSuchElementException: break
+                accounts = wait_for_element_by_name(driver, 'primaryKey')
+                try: account = Select(accounts).options[i]
+                except IndexError: break
+                driver.execute_script("arguments[0].selected = true", account)
                 driver.find_element_by_name("Select").click()
 
+                # Not totally sure why this is necessary, but without it only 
+                # the first account in the dropdown box is downloaded.
+                import time; time.sleep(1)
+
                 # Pick the date range to download.
-                driver.find_element_by_id('fromDate').clear()
                 driver.find_element_by_id('toDate').clear()
-                driver.find_element_by_id('fromDate').send_keys(from_date)
+                driver.find_element_by_id('fromDate').clear()
                 driver.find_element_by_id('toDate').send_keys(to_date)
+                driver.find_element_by_id('fromDate').send_keys(from_date)
 
                 # Download it.
                 driver.find_element_by_id('quickenOFX').click()
                 driver.find_element_by_name('Download').click()
+
+                import time; time.sleep(1)
+
 
     def _parse(self, ofx_dir):
         accounts = []

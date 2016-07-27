@@ -390,15 +390,15 @@ def parse_allowance(allowance):
     An allowance is a string that represents some amount of money per time.  
     Each allowance is expected to have three tokens.  The first is a dollar 
     amount (which may be preceded by a dollar sign), the second is either "/" 
-    or " per ", and the third is one of "day", "month", "mo", or "year".  If 
-    the given allowance is properly formatted, this function returns a float in 
-    units of dollars per day.  Otherwise an AllowanceError is raised.
+    or " per ", and the third is one of "day", "month", "mo", "year", or "yr".  
+    If the given allowance is properly formatted, this function returns a float 
+    in units of dollars per day.  Otherwise an AllowanceError is raised.
     """
 
     if allowance == '':
         return 0
 
-    allowance_pattern = re.compile('(\$?[0-9.]+)(/| per )(day|month|mo|year)')
+    allowance_pattern = re.compile('(\$?[0-9.]+)(/| per )(day|month|mo|year|yr)')
     allowance_match = allowance_pattern.match(allowance)
 
     if not allowance_match:
@@ -412,7 +412,7 @@ def parse_allowance(allowance):
         days = 1
     elif time_token in ('month', 'mo'):
         days = days_per_month
-    elif time_token == 'year':
+    elif time_token == ('year', 'yr'):
         days = days_per_year
     else:
         raise AssertionError    # pragma: no cover
