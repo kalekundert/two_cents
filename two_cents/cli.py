@@ -5,18 +5,19 @@ Maintain a budget that updates every day.
 
 Usage:
     two_cents [-d] [-D] [-I] [-g] [-h] [-v]
-    two_cents add-bank <name> [-u <command>] [-p <command>]
-    two_cents add-budget <name> [-b <dollars>] [-a <dollars-per-time>]
-    two_cents debug-bank-scraper
-    two_cents describe-budgets [-e]
-    two_cents download-payments [-I]
-    two_cents reassign-payment <payment-id> <budget>
-    two_cents set-allowance <budget> <allowance>
-    two_cents show-allowance [<budgets>...]
-    two_cents show-payments [<budget>]
-    two_cents suggest-allowance [<budgets>...] [-s]
-    two_cents transfer-allowance <dollars-per-time> <budget-from> <budget-to>
-    two_cents transfer-money <dollars> <budget-from> <budget-to>
+    two_cents add_bank <name> [-u <command>] [-p <command>]
+    two_cents add_budget <name> [-b <dollars>] [-a <dollars-per-time>]
+    two_cents debug_bank_scraper
+    two_cents describe_budgets [-e]
+    two_cents download_payments [-I]
+    two_cents reassign_payment <payment-id> <budget>
+    two_cents remove_budget <budget>
+    two_cents set_allowance <budget> <allowance>
+    two_cents show_allowance [<budgets>...]
+    two_cents show_payments [<budget>]
+    two_cents suggest_allowance [<budgets>...] [-s]
+    two_cents transfer_allowance <dollars-per-time> <budget-from> <budget-to>
+    two_cents transfer_money <dollars> <budget-from> <budget-to>
 
 Options:
   -d, --download
@@ -90,70 +91,75 @@ def main(argv=None, db_path=None):
             db_path = os.path.join(dirs.user_config_dir, 'budgets.db')
 
         with two_cents.open_db(db_path) as session:
-            if args['add-bank']:
+            if args['add_bank']:
                 add_bank(
                         session,
                         scraper_key=args['<name>'],
                         username_cmd=args['--username-cmd'],
                         password_cmd=args['--password-cmd'],
                 )
-            elif args['add-budget']:
+            elif args['add_budget']:
                 add_budget(
                         session,
                         name=args['<name>'],
                         initial_balance=args['--initial-balance'],
                         initial_allowance=args['--initial-allowance'],
                 )
-            elif args['describe-budgets']:
+            elif args['describe_budgets']:
                 describe_budgets(
                         edit=args['--edit'],
                 )
-            elif args['debug-bank-scraper']:
+            elif args['debug_bank_scraper']:
                 download_payments(
                         session,
                         show_browser=True,
                 )
-            elif args['download-payments']:
+            elif args['download_payments']:
                 download_payments(
                         session,
                         interactive=not args['--no-interaction'],
                 )
-            elif args['reassign-payment']:
+            elif args['reassign_payment']:
                 reassign_payment(
                         session,
                         args['<payment-id>'],
                         args['<budget>'],
                 )
-            elif args['set-allowance']:
+            elif args['remove_budget']:
+                remove_budget(
+                        session,
+                        name=args['<budget>'],
+                )
+            elif args['set_allowance']:
                 set_allowance(
                         session,
                         args['<budget>'],
                         args['<allowance>'],
                 )
-            elif args['show-allowance']:
+            elif args['show_allowance']:
                 show_allowance(
                         session,
                         args['<budgets>'],
                 )
-            elif args['show-payments']:
+            elif args['show_payments']:
                 show_payments(
                         session,
                         args['<budget>'],
                 )
-            elif args['suggest-allowance']:
+            elif args['suggest_allowance']:
                 suggest_allowance(
                         session,
                         args['<budgets>'],
                         args['--set-suggested-allowance'],
                 )
-            elif args['transfer-allowance']:
+            elif args['transfer_allowance']:
                 transfer_allowance(
                         session,
                         args['<dollars-per-time>'],
                         args['<budget-from>'],
                         args['<budget-to>'],
                 )
-            elif args['transfer-money']:
+            elif args['transfer_money']:
                 transfer_money(
                         session,
                         args['<dollars>'],
@@ -231,6 +237,10 @@ def download_payments(session, interactive=True, show_browser=False):
 def reassign_payment(session, payment_id, budget):
     payment = two_cents.get_payment(session, payment_id)
     payment.assign(budget)
+
+def remove_budget(session, budget):
+    budget = two_cents.get_budget(session, budget)
+    session.delete(budget)
 
 def set_allowance(session, budget, allowance):
     budget = two_cents.get_budget(session, budget)

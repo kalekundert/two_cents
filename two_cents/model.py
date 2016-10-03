@@ -24,8 +24,8 @@ DollarsPerDay = Float
 
 
 seconds_per_day = 86400
-days_per_month = 356 / 12
-days_per_year = 356
+days_per_month = 365 / 12
+days_per_year = 365
 
 class Budget (Base):
     __tablename__ = 'budgets'
@@ -412,7 +412,7 @@ def parse_allowance(allowance):
         days = 1
     elif time_token in ('month', 'mo'):
         days = days_per_month
-    elif time_token == ('year', 'yr'):
+    elif time_token in ('year', 'yr'):
         days = days_per_year
     else:
         raise AssertionError    # pragma: no cover

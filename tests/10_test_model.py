@@ -60,18 +60,18 @@ def test_budget_schema(fresh_test_db):
         budgets[1].allowance = two_cents.parse_allowance('100 per month')
 
         assert budgets[0].recovery_time == 0
-        assert budgets[1].recovery_time == 30
+        assert budgets[1].recovery_time == 31
 
         change_date('next month')
         two_cents.update_allowances(session)
 
         # All the numbers in these 6 assertions were checked by hand.
 
-        assert budgets[0].balance == approx(150 * 31 * 12 / 356)
-        assert budgets[0].pretty_balance == '$156.74'
+        assert budgets[0].balance == pytest.approx(150 * 31 * 12 / 365)
+        assert budgets[0].pretty_balance == '$152.88'
         assert budgets[0].recovery_time == 0
-        assert budgets[1].balance == approx(100 * 31 * 12 / 356 - 100)
-        assert budgets[1].pretty_balance == '$4.49'
+        assert budgets[1].balance == pytest.approx(100 * 31 * 12 / 365 - 100)
+        assert budgets[1].pretty_balance == '$1.92'
         assert budgets[1].recovery_time == 0
 
 def test_payment_schema(fresh_test_db):
@@ -96,8 +96,8 @@ def test_payment_schema(fresh_test_db):
 
         payments[0].assign('groceries')
 
-        assert groceries.balance == approx(-100)
-        assert restaurants.balance == approx(0)
+        assert groceries.balance == pytest.approx(-100)
+        assert restaurants.balance == pytest.approx(0)
 
         with pytest.raises(two_cents.AssignmentError):
             payments[0].assign('groceries')
@@ -108,26 +108,26 @@ def test_payment_schema(fresh_test_db):
 
         payments[1].ignore()
 
-        assert groceries.balance == approx(-100)
-        assert restaurants.balance == approx(0)
+        assert groceries.balance == pytest.approx(-100)
+        assert restaurants.balance == pytest.approx(0)
 
         payments[1].assign('groceries')
 
-        assert groceries.balance == approx(-110)
-        assert restaurants.balance == approx(-00)
+        assert groceries.balance == pytest.approx(-110)
+        assert restaurants.balance == pytest.approx(-00)
 
         payments[1].assign('restaurants')
 
-        assert groceries.balance == approx(-100)
-        assert restaurants.balance == approx(-10)
+        assert groceries.balance == pytest.approx(-100)
+        assert restaurants.balance == pytest.approx(-10)
         assert two_cents.get_payments(session, 'groceries') == [payments[0]]
         assert two_cents.get_payments(session, 'restaurants') == [payments[1]]
 
         credit = add_payment(bank, 110)
         credit.assign('groceries')
 
-        assert groceries.balance == approx(10)
-        assert restaurants.balance == approx(-10)
+        assert groceries.balance == pytest.approx(10)
+        assert restaurants.balance == pytest.approx(-10)
 
 def test_bank_schema(fresh_test_db):
     with open_test_db() as session:
@@ -165,8 +165,8 @@ def test_suggest_allowance(fresh_test_db):
 
         change_date('tomorrow')
 
-        assert two_cents.suggest_allowance(session, budgets[0]) == approx(2966.666666666667)
-        assert two_cents.suggest_allowance(session, budgets[1]) == approx(296.6666666666667)
+        assert two_cents.suggest_allowance(session, budgets[0]) == pytest.approx(100 * 365 / 12)
+        assert two_cents.suggest_allowance(session, budgets[1]) == pytest.approx(10 * 365 / 12)
 
 def test_transfer_money(fresh_test_db):
     with open_test_db() as session:
@@ -195,27 +195,27 @@ def test_transfer_allowance(fresh_test_db):
 
         two_cents.transfer_allowance(0, budgets[0], budgets[1])
 
-        assert budgets[0].allowance == approx(parse_allowance('150 per month'))
-        assert budgets[1].allowance == approx(parse_allowance('100 per month'))
+        assert budgets[0].allowance == pytest.approx(parse_allowance('150 per month'))
+        assert budgets[1].allowance == pytest.approx(parse_allowance('100 per month'))
 
         two_cents.transfer_allowance(
                 parse_allowance('30 per month'), budgets[0], budgets[1])
 
-        assert budgets[0].allowance == approx(parse_allowance('120 per month'))
-        assert budgets[1].allowance == approx(parse_allowance('130 per month'))
+        assert budgets[0].allowance == pytest.approx(parse_allowance('120 per month'))
+        assert budgets[1].allowance == pytest.approx(parse_allowance('130 per month'))
 
 def test_parse_dollars(fresh_test_db):
     f = two_cents.parse_dollars
 
-    assert f('$50.00') == approx(50)
-    assert f('50.00') == approx(50)
-    assert f('50') == approx(50)
-    assert f(50) == approx(50)
+    assert f('$50.00') == pytest.approx(50)
+    assert f('50.00') == pytest.approx(50)
+    assert f('50') == pytest.approx(50)
+    assert f(50) == pytest.approx(50)
 
-    assert f('-$50.00') == approx(-50)
-    assert f('-50.00') == approx(-50)
-    assert f('-50') == approx(-50)
-    assert f(-50) == approx(-50)
+    assert f('-$50.00') == pytest.approx(-50)
+    assert f('-50.00') == pytest.approx(-50)
+    assert f('-50') == pytest.approx(-50)
+    assert f(-50) == pytest.approx(-50)
 
     with pytest.raises(two_cents.MoneyError):
         f('nan')
@@ -229,12 +229,12 @@ def test_parse_dollars(fresh_test_db):
 def test_parse_allowance(fresh_test_db):
     f = two_cents.parse_allowance
 
-    assert f('5 per day') == approx(5)
-    assert f('$5 per day') == approx(5)
-    assert f('$5/day') == approx(5)
-    assert f('150 per month') == approx(150 * 12 / 356)
-    assert f('150 per mo') == approx(150 * 12 / 356)
-    assert f('100 per year') == approx(100 / 356)
+    assert f('5 per day') == pytest.approx(5)
+    assert f('$5 per day') == pytest.approx(5)
+    assert f('$5/day') == pytest.approx(5)
+    assert f('150 per month') == pytest.approx(150 * 12 / 365)
+    assert f('150 per mo') == pytest.approx(150 * 12 / 365)
+    assert f('100 per year') == pytest.approx(100 / 365)
     assert f('') == 0
 
     with pytest.raises(two_cents.AllowanceError):

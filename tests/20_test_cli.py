@@ -41,10 +41,10 @@ def run_two_cents(argv='', *stdin):
 
 def test_add_bank():
     factories = {
-            'add-bank wells_fargo -u "echo username" -p "echo password"': [],
-            'add-bank wells_fargo -u "echo username"': ['echo password'],
-            'add-bank wells_fargo -p "echo password"': ['echo username'],
-            'add-bank wells_fargo': ['echo username', 'echo password'],
+            'add_bank wells_fargo -u "echo username" -p "echo password"': [],
+            'add_bank wells_fargo -u "echo username"': ['echo password'],
+            'add_bank wells_fargo -p "echo password"': ['echo username'],
+            'add_bank wells_fargo': ['echo username', 'echo password'],
     }
 
     for argv, stdin in factories.items():
@@ -56,9 +56,9 @@ def test_add_bank():
         run_two_cents(argv, *stdin)
 
         assert "Bank 'unsupported-bank' is not supported." in \
-                run_two_cents('add-bank unsupported-bank')
+                run_two_cents('add_bank unsupported-bank')
         assert "Bank 'wells_fargo' already exists." in \
-                run_two_cents('add-bank wells_fargo')
+                run_two_cents('add_bank wells_fargo')
 
         with open_test_db() as session:
             bank = two_cents.get_bank(session, 'wells_fargo')
@@ -70,10 +70,10 @@ def test_add_budget(fresh_test_db):
     with open_test_db() as session:
         assert two_cents.get_num_budgets(session) == 0
 
-    run_two_cents('add-budget apples')
-    run_two_cents('add-budget bananas -b 100')
-    run_two_cents('add-budget cherries -a "50 per year"')
-    run_two_cents('add-budget peaches -b 30 -a "20 per month"')
+    run_two_cents('add_budget apples')
+    run_two_cents('add_budget bananas -b 100')
+    run_two_cents('add_budget cherries -a "50 per year"')
+    run_two_cents('add_budget peaches -b 30 -a "20 per month"')
 
     with open_test_db() as session:
         assert two_cents.get_num_budgets(session) == 4
@@ -90,12 +90,12 @@ def test_add_budget(fresh_test_db):
 
         budget = two_cents.get_budget(session, 'cherries')
         assert budget.balance == 0
-        assert budget.allowance == approx(50 / 356)
+        assert budget.allowance == pytest.approx(50 / 365)
         assert budget.last_update == test_dates['today']
 
         budget = two_cents.get_budget(session, 'peaches')
         assert budget.balance == 30
-        assert budget.allowance == approx(20 * 12 / 356)
+        assert budget.allowance == pytest.approx(20 * 12 / 365)
         assert budget.last_update == test_dates['today']
 
 def test_reassign_payments(fresh_test_db):
@@ -105,13 +105,13 @@ def test_reassign_payments(fresh_test_db):
         assert two_cents.get_payment(session, 1).assignment == 'groceries'
 
     assert "No payment with id='42'." in \
-            run_two_cents('reassign-payment 42 restaurants')
+            run_two_cents('reassign_payment 42 restaurants')
     assert "No payment with id='wrong-type'." in \
-            run_two_cents('reassign-payment wrong-type restaurants')
+            run_two_cents('reassign_payment wrong-type restaurants')
     assert "No budget named 'no-such-budget'." in \
-            run_two_cents('reassign-payment 1 no-such-budget')
+            run_two_cents('reassign_payment 1 no-such-budget')
 
-    run_two_cents('reassign-payment 1 restaurants')
+    run_two_cents('reassign_payment 1 restaurants')
 
     with open_test_db() as session:
         assert two_cents.get_payment(session, 1).assignment == 'restaurants'
@@ -123,7 +123,7 @@ def test_show_payments(fresh_test_db):
         payments[0].description = 'SAFEWAY'
         payments[1].description = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam justo sem, malesuada ut ultricies ac, bibendum eu neque.'
 
-    assert run_two_cents('show-payments') == '''\
+    assert run_two_cents('show_payments') == '''\
 Id: 1
 Bank: Wells Fargo
 Date: 01/01/14
@@ -140,7 +140,7 @@ Description:
   malesuada ut ultricies ac, bibendum eu neque.
 
 '''
-    assert run_two_cents('show-payments groceries') == '''\
+    assert run_two_cents('show_payments groceries') == '''\
 Id: 1
 Bank: Wells Fargo
 Date: 01/01/14
@@ -155,17 +155,17 @@ def test_transfer_money(fresh_test_db):
         fill_database(session)
 
     assert "Expected a dollar value, not 'infinity'." in run_two_cents(
-            'transfer-money infinity groceries restaurants')
+            'transfer_money infinity groceries restaurants')
     assert "No budget named 'no-such-budget'." in run_two_cents(
-            'transfer-money 100 groceries no-such-budget')
+            'transfer_money 100 groceries no-such-budget')
     assert "No budget named 'no-such-budget'." in run_two_cents(
-            'transfer-money 100 no-such-budget restaurants')
+            'transfer_money 100 no-such-budget restaurants')
 
     with open_test_db() as session:
         assert two_cents.get_budget(session, 'groceries').balance == 0
         assert two_cents.get_budget(session, 'restaurants').balance == 0
 
-    run_two_cents('transfer-money 100 groceries restaurants')
+    run_two_cents('transfer_money 100 groceries restaurants')
     
     with open_test_db() as session:
         assert two_cents.get_budget(session, 'groceries').balance == -100
@@ -210,6 +210,6 @@ def test_update_budgets(fresh_test_db):
 
     assert run_two_cents('-D') == '''\
 Groceries           $50.00         
-Restaurants        -$10.00 (3 days)
+Restaurants        -$10.00 (4 days)
 '''
 
