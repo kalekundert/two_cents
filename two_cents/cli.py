@@ -12,6 +12,7 @@ Usage:
     two_cents download_payments [-I]
     two_cents reassign_payment <payment-id> <budget>
     two_cents remove_budget <budget>
+    two_cents rename_budget <old_name> <new_name>
     two_cents set_allowance <budget> <allowance>
     two_cents show_allowance [<budgets>...]
     two_cents show_payments [<budget>] [-1]
@@ -136,6 +137,12 @@ def main(argv=None, db_path=None):
                         session,
                         budget=args['<budget>'],
                 )
+            elif args['rename_budget']:
+                rename_budget(
+                        session,
+                        old_name=args['<old_name>'],
+                        new_name=args['<new_name>'],
+                )
             elif args['set_allowance']:
                 set_allowance(
                         session,
@@ -248,6 +255,9 @@ def reassign_payment(session, payment_id, budget):
 def remove_budget(session, budget):
     budget = two_cents.get_budget(session, budget)
     session.delete(budget)
+
+def rename_budget(session, old_name, new_name):
+    two_cents.rename_budget(session, old_name, new_name)
 
 def set_allowance(session, budget, allowance):
     budget = two_cents.get_budget(session, budget)

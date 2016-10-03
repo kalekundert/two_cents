@@ -142,7 +142,6 @@ class Payment (Base):
         already assigned before this call, the old budget will be credited and 
         the new budgets will be debited as appropriate.
         """
-
         session = Session.object_session(self)
 
         # Warn the user if the new assignment is the same as the old one.
@@ -340,6 +339,18 @@ def download_payments(session, username_callback, password_callback, show_browse
 def update_allowances(session):
     for budget in get_budgets(session):
         budget.update_allowance()
+
+def rename_budget(session, old_name, new_name):
+    budget = get_budget(session, old_name)
+    budget.name = new_name
+
+    # Update any payments that were assigned to this budget.  This exposes some 
+    # bad database design; I wouldn't have to do this if the assignment field 
+    # were a foreign key (although I'm not totally sure how the "ignore" 
+    # assignment would be handled in such a schema).
+
+    for payment in get_payments(session, old_name):
+        payment.assignment = new_name
 
 def suggest_allowance(session, budget):
     """

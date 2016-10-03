@@ -170,6 +170,19 @@ def test_suggest_allowance(fresh_test_db):
         assert two_cents.suggest_allowance(session, budgets[0]) == pytest.approx(100 * 365 / 12)
         assert two_cents.suggest_allowance(session, budgets[1]) == pytest.approx(10 * 365 / 12)
 
+def test_rename_budget(fresh_test_db):
+    with open_test_db() as session:
+        bank, payments, budgets = fill_database(session)
+
+        payments[0].assign('groceries')
+        assert two_cents.get_payments(session, 'groceries') == [payments[0]]
+        assert two_cents.get_payments(session, 'joint groceries') == []
+
+        two_cents.rename_budget(session, 'groceries', 'joint groceries')
+        assert budgets[0].name == 'joint groceries'
+        assert two_cents.get_payments(session, 'groceries') == []
+        assert two_cents.get_payments(session, 'joint groceries') == [payments[0]]
+
 def test_transfer_money(fresh_test_db):
     with open_test_db() as session:
         bank, payments, budgets = fill_database(session)
