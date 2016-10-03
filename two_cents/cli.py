@@ -14,7 +14,7 @@ Usage:
     two_cents remove_budget <budget>
     two_cents set_allowance <budget> <allowance>
     two_cents show_allowance [<budgets>...]
-    two_cents show_payments [<budget>]
+    two_cents show_payments [<budget>] [-1]
     two_cents suggest_allowance [<budgets>...] [-s]
     two_cents transfer_allowance <dollars-per-time> <budget-from> <budget-to>
     two_cents transfer_money <dollars> <budget-from> <budget-to>
@@ -63,6 +63,12 @@ Options:
   -g, --gui
         When downloading new transaction data, show the Firefox GUI so you can 
         watch the scraper work.  This is only useful for debugging.
+
+  -1, --one-line
+        Summarize each payment on one line, to make automated processing 
+        easier.  The fields describing each payment will be separated by tabs, 
+        so you can save the output to a tab-separated value (*.tsv) file and 
+        view it in any spreadsheet program.
 
   -h, --help
         Print out this message.
@@ -145,6 +151,7 @@ def main(argv=None, db_path=None):
                 show_payments(
                         session,
                         args['<budget>'],
+                        one_line=args['--one-line'],
                 )
             elif args['suggest_allowance']:
                 suggest_allowance(
@@ -254,10 +261,13 @@ def show_allowance(session, budgets):
                     budget.pretty_allowance,
             ])
 
-def show_payments(session, budget=None):
+def show_payments(session, budget=None, one_line=False):
     for payment in two_cents.get_payments(session, budget):
-        show_payment(payment)
-        print()
+        if one_line:
+            show_payment_tsv(payment)
+        else:
+            show_payment(payment)
+            print()
 
 def suggest_allowance(session, budgets, set=False):
     # Populate a table with suggested allowances for each budget, then display 
@@ -465,6 +475,17 @@ def show_payment(payment, indent=''):
 
         print("{}Description:".format(indent))
         print('\n'.join(description))
+
+def show_payment_tsv(payment):
+    fields = [
+            payment.id,
+            payment.bank.title,
+            payment.date,
+            payment.value,
+            payment.assignment,
+            payment.description,
+    ]
+    print('\t'.join(str(x).strip() for x in fields))
 
 def get_username_prompter(interactive=True):
     def username_prompter(bank, error_message):
