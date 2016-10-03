@@ -38,7 +38,7 @@ class Budget (Base):
 
     def __init__(self, name, balance=None, allowance=None):
         self.name = name
-        self.balance = int(balance or 0)
+        self.balance = parse_dollars(balance or 0)
         self.allowance = parse_allowance(allowance or '')
         self.last_update = now()
 

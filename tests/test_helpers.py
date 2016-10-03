@@ -36,7 +36,7 @@ def fill_database(session):
     ]
     budgets = [
             add_budget(session, 'groceries', '0', ''),
-            add_budget(session, 'restaurants', '0', ''),
+            add_budget(session, 'restaurants', '$0.0', ''),
     ]
     return bank, payments, budgets
 
