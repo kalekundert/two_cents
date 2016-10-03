@@ -175,7 +175,6 @@ class WellsFargo:
 
                 import time; time.sleep(1)
 
-
     def _parse(self, ofx_dir):
         accounts = []
 
