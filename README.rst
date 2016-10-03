@@ -16,8 +16,18 @@ Finally, it will display the balance for each budget.  For budgets with
 negative balances, it will also display an estimate for how long it will take 
 for the budget to return to the black.
 
+.. image:: https://img.shields.io/pypi/v/two_cents.svg
+   :target: https://pypi.python.org/pypi/two_cents
+
+.. image:: https://img.shields.io/pypi/pyversions/two_cents.svg
+   :target: https://pypi.python.org/pypi/two_cents
+
 .. image:: https://travis-ci.org/kalekundert/two_cents.svg?branch=master
-    :target: https://travis-ci.org/kalekundert/two_cents
+   :target: https://travis-ci.org/kalekundert/two_cents
+
+.. image:: https://coveralls.io/repos/github/kalekundert/two_cents/badge.svg?branch=master
+   :target: https://coveralls.io/github/kalekundert/two_cents?branch=master
+
 
 Installation
 ------------
@@ -36,7 +46,7 @@ Basic Usage
 The first step is to tell Two Cents about your bank.  Currently only Wells 
 Fargo is supported::
 
-   $ two_cents add-bank wells_fargo
+   $ two_cents add_bank wells_fargo
 
 Two Cents will ask for commands it can run to generate your username and 
 password.  It needs this information so it can log into your account and scrape 
@@ -52,9 +62,9 @@ your password encrypted and can unencrypt it for Two Cents.
 
 Once you've added your bank, the next step is to add one or more budgets::
 
-   $ two_cents add-budget groceries -a 500/mo
-   $ two_cents add-budget restaurants -a 200/mo
-   $ two_cents add-budget miscellaneous -a 100/mo
+   $ two_cents add_budget groceries -a 500/mo
+   $ two_cents add_budget restaurants -a 200/mo
+   $ two_cents add_budget miscellaneous -a 100/mo
 
 The ``-a`` option sets the allowance for the new budget.  You can also leave 
 off this argument and set (or change) the allowance later.  There is also an 
@@ -79,7 +89,7 @@ transactions.  If you want to save yourself some time, you can use ``cron`` to
 download new transactions in the background every hour or so::
 
    $ crontab -e
-   0 * * * * two_cents download-payments -I
+   0 * * * * two_cents download_payments -I
 
 The ``-I`` command prevents Two Cents from expecting any input on stdin.  You 
 also need to ensure that the username and password commands you provided will 
