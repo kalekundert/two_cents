@@ -46,7 +46,7 @@ def add_bank(session, scraper_key='wells_fargo'):
     return bank
 
 def add_payment(bank, value=-100, date='today'):
-    payment = two_cents.Payment('???', '???', test_dates[date].date(), value, '???')
+    payment = two_cents.Payment('0000000000000000', 'transaction id', test_dates[date].date(), value, 'description...')
     bank.payments.append(payment)
     return payment
 

@@ -462,6 +462,7 @@ def show_payment(payment, indent=''):
     print("{}Bank: {}".format(indent, payment.bank.title))
     print("{}Date: {}".format(indent, two_cents.format_date(payment.date)))
     print("{}Value: {}".format(indent, two_cents.format_dollars(payment.value)))
+    print("{}Account: {}".format(indent, payment.account_ending))
 
     if payment.assignment is not None:
         print("{}Assignment: {}".format(indent, payment.assignment))
@@ -480,6 +481,7 @@ def show_payment_tsv(payment):
     fields = [
             payment.id,
             payment.bank.title,
+            payment.account_ending,
             payment.date,
             payment.value,
             payment.assignment,

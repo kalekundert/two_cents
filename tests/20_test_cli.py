@@ -138,6 +138,7 @@ Id: 1
 Bank: Wells Fargo
 Date: 01/01/14
 Value: -$100.00
+Account: ****0000
 Assignment: groceries
 Description: SAFEWAY
 
@@ -145,6 +146,7 @@ Id: 2
 Bank: Wells Fargo
 Date: 01/01/14
 Value: -$10.00
+Account: ****0000
 Description:
   Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam justo sem,
   malesuada ut ultricies ac, bibendum eu neque.
@@ -155,6 +157,7 @@ Id: 1
 Bank: Wells Fargo
 Date: 01/01/14
 Value: -$100.00
+Account: ****0000
 Assignment: groceries
 Description: SAFEWAY
 

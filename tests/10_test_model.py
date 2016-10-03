@@ -93,6 +93,8 @@ def test_payment_schema(fresh_test_db):
         assert two_cents.get_num_unassigned_payments(session) == 2
         assert two_cents.get_payment(session, 1) is payments[0]
         assert two_cents.get_payment(session, 2) is payments[1]
+        assert payments[0].account_ending == '****0000'
+        assert payments[1].account_ending == '****0000'
 
         payments[0].assign('groceries')
 

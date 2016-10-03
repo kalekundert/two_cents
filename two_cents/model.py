@@ -181,6 +181,10 @@ class Payment (Base):
         else:
             raise AssignmentError("Payment can't be ignored because it's already assigned to '{}'.".format(self.assignment))
 
+    @property
+    def account_ending(self):
+        return '****' + self.account_id[-4:]
+
 
 def get_payment(session, id):
     payment = session.query(Payment).get(id)
