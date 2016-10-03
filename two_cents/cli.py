@@ -128,7 +128,7 @@ def main(argv=None, db_path=None):
             elif args['remove_budget']:
                 remove_budget(
                         session,
-                        name=args['<budget>'],
+                        budget=args['<budget>'],
                 )
             elif args['set_allowance']:
                 set_allowance(

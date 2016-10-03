@@ -116,6 +116,16 @@ def test_reassign_payments(fresh_test_db):
     with open_test_db() as session:
         assert two_cents.get_payment(session, 1).assignment == 'restaurants'
 
+def test_remove_budget(fresh_test_db):
+    with open_test_db() as session:
+        fill_database(session)
+        assert two_cents.budget_exists(session, 'groceries')
+
+    run_two_cents('remove_budget groceries')
+
+    with open_test_db() as session:
+        assert not two_cents.budget_exists(session, 'groceries')
+
 def test_show_payments(fresh_test_db):
     with open_test_db() as session:
         bank, payments, budgets = fill_database(session)
