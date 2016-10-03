@@ -6,12 +6,9 @@ python:
   - "nightly"
 install:
   - pip install .
+  - pip install --upgrade pytest pytest-cov python-coveralls
 script: 
-  - py.test tests
-deploy:
-    provider: pypi
-    user: kalekundert
-    on:
-        tags: true
-
-
+  - cd tests
+  - py.test --cov two_cents
+after_success:
+  - coveralls
