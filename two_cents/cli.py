@@ -441,7 +441,8 @@ def show_budgets(session):
     with print_table('lr') as table:
         for budget in two_cents.get_budgets(session):
             table.add_row([
-                budget.name.title() + ' ' * table.right_padding_width,
+                budget.name.replace('_', ' ').title() + \
+                        ' ' * table.right_padding_width,
                 budget.pretty_balance + ' ',
                 '' if budget.recovery_time <= 0 else 
                     '({} {})'.format(budget.recovery_time,

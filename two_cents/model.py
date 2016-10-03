@@ -152,7 +152,8 @@ class Payment (Base):
         # Make sure the new assignment actually exists.
 
         try:
-            new_budget = get_budget(session, assignment)
+            if assignment != 'ignore':
+                new_budget = get_budget(session, assignment)
         except NoSuchBudget:
             raise NoSuchBudget(assignment)
 
@@ -171,7 +172,9 @@ class Payment (Base):
 
         # Debit the new assignment the value of this payment.
 
-        new_budget.balance += self.value
+        if assignment != 'ignore':
+            new_budget.balance += self.value
+
         self.assignment = assignment
 
     def ignore(self):
