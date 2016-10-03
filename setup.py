@@ -36,6 +36,7 @@ setup(
         'ofxparse',
         'docopt==0.6.2',
         'appdirs',
+        'pathlib',
         'prettytable',
     ],
     zip_safe=False,
