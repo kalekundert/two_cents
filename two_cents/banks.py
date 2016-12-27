@@ -58,19 +58,17 @@ def firefox_driver(download_dir, gui=False, max_load_time=30):
             profile.set_preference('dom.ipc.plugins.enabled.libflashplayer.so', 'false')
 
         # Use the Marionette driver, which is required for Firefox >= 47.
+        
+        # To install Marionette , download the most recent geckodriver binary 
+        # from https://github.com/mozilla/geckodriver/releases, unpack it, and 
+        # put the binary somewhere on your $PATH.
 
         capabilities = DesiredCapabilities.FIREFOX
         capabilities['marionette'] = True
 
-        # Use the firefox 48 beta binary.  This will be unnecessary once 
-        # firefox 48 is released.
-
-        from selenium.webdriver.firefox.firefox_binary import FirefoxBinary
-        binary = FirefoxBinary('/home/kale/hacking/third_party/firefox/firefox')
-
         # Construct and yield a Firefox driver.
 
-        driver = webdriver.Firefox(profile, capabilities=capabilities, firefox_binary=binary)
+        driver = webdriver.Firefox(profile, capabilities=capabilities)
         driver.implicitly_wait(max_load_time)
 
         yield driver
@@ -150,8 +148,8 @@ class WellsFargo:
             password_form.submit()
 
             # Open the "More" menu.
+            time.sleep(5)
             more = wait_for_element_by_partial_link_text(driver, 'More')
-            time.sleep(1)
             more.click()
 
             # Navigate to the "Download Your Account Activity" page.
