@@ -14,6 +14,7 @@ import warnings
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support.expected_conditions import staleness_of, element_to_be_clickable
@@ -28,6 +29,54 @@ dirs = appdirs.AppDirs('two_cents', 'username')
 # 3. Print out more status updates.
 
 @contextlib.contextmanager
+def chrome_driver(download_dir, gui=False, max_load_time=30):
+    from xvfbwrapper import Xvfb
+
+    # If the GUI was not explicitly requested, use the X virtual frame buffer 
+    # (Xvfb) to gobble it.
+
+    if not gui:
+        xvfb = Xvfb()
+        xvfb.start()
+
+    try:
+        # Use Chrome (instead of Firefox) because I can hack chromedriver to 
+        # not be detected by Wells Fargo.  The hack is described here:
+        #
+        # https://stackoverflow.com/questions/33225947/can-a-website-detect-when-you-are-using-selenium-with-chromedriver
+        #
+        # Briefly, these are the steps you have to follow:
+        #
+        # - Download the most recent version of chromedriver for here:
+        #
+        #     https://sites.google.com/a/chromium.org/chromedriver/downloads
+        # 
+        # - Copy (or link) the excecutable onto your $PATH.
+        #
+        # - Open to chromedriver executable directly in vim.
+        #
+        # - Search for 'cdc_' (which should only appear once, in a javascript 
+        #   block) and replace it with 'xxx_' (or anything else).
+
+        options = webdriver.ChromeOptions()
+        options.add_experimental_option(
+                'prefs', {'download.default_directory': download_dir})
+ 
+        driver = webdriver.Chrome()
+        driver.implicitly_wait(max_load_time)
+        yield driver
+
+    finally:
+
+        # If the GUI is disabled, close the browser as soon as the scraping is 
+        # complete.
+
+        if not gui:
+            try: driver.close()
+            except AttributeError: pass
+            xvfb.stop()
+
+@contextlib.contextmanager
 def firefox_driver(download_dir, gui=False, max_load_time=30):
     from xvfbwrapper import Xvfb
 
@@ -39,13 +88,12 @@ def firefox_driver(download_dir, gui=False, max_load_time=30):
         xvfb.start()
 
     try:
-
         # Change some of the Firefox's default preferences.  In particular, 
         # have it automatically download files without asking questions.
 
         profile = webdriver.FirefoxProfile()
-        profile.set_preference('browser.download.folderList',2)
-        profile.set_preference('browser.download.manager.showWhenStarting',False)
+        profile.set_preference('browser.download.folderList', 2)
+        profile.set_preference('browser.download.manager.showWhenStarting', False)
         profile.set_preference('browser.download.dir', download_dir)
         profile.set_preference('browser.helperApps.neverAsk.saveToDisk','application/vnd.intu.QFX')
         
@@ -59,7 +107,7 @@ def firefox_driver(download_dir, gui=False, max_load_time=30):
 
         # Use the Marionette driver, which is required for Firefox >= 47.
         
-        # To install Marionette , download the most recent geckodriver binary 
+        # To install Marionette, download the most recent geckodriver binary 
         # from https://github.com/mozilla/geckodriver/releases, unpack it, and 
         # put the binary somewhere on your $PATH.
 
@@ -79,10 +127,14 @@ def firefox_driver(download_dir, gui=False, max_load_time=30):
         # complete.
 
         if not gui:
-            driver.close()
+            try: driver.close()
+            except AttributeError: pass
             xvfb.stop()
 
+
 def wait_for_element(driver, element_type, element_identifier, timeout=30):
+    print(f'Waiting for {element_type} {element_identifier}...')
+
     wait = WebDriverWait(driver, timeout)
     wait.until(element_to_be_clickable((element_type, element_identifier)))
 
@@ -93,7 +145,7 @@ def wait_for_element(driver, element_type, element_identifier, timeout=30):
     # so it should wait for a few seconds for elements to load.  But despite 
     # that, immediately calling click() on the element returned by this method 
     # does nothing.
-    time.sleep(1)
+    #time.sleep(1)
 
     return driver.find_element(element_type, element_identifier)
 
@@ -103,6 +155,9 @@ def wait_for_element_by_id(driver, id, timeout=30):
 def wait_for_element_by_name(driver, name, timeout=30):
     return wait_for_element(driver, By.NAME, name, timeout)
 
+def wait_for_element_by_xpath(driver, name, timeout=30):
+    return wait_for_element(driver, By.XPATH, name, timeout)
+
 def wait_for_element_by_link_text(driver, link_text, timeout=30):
     return wait_for_element(driver, By.LINK_TEXT, link_text, timeout)
 
@@ -111,7 +166,6 @@ def wait_for_element_by_partial_link_text(driver, link_text, timeout=30):
 
 def wait_for_element_by_css_selector(driver, css_selector, timeout=30):
     return wait_for_element(driver, By.CSS_SELECTOR, css_selector, timeout)
-
 
 class WellsFargo:
 
@@ -128,6 +182,7 @@ class WellsFargo:
             # Download financial data from Wells Fargo, then parse it and make 
             # a list of transactions for each account.
             self._scrape(ofx_dir, from_date, to_date)
+            input(f"Check downloads ({ofx_dir})?")
             return self._parse(ofx_dir)
 
     def _scrape(self, ofx_dir, from_date=None, to_date=None):
@@ -137,7 +192,7 @@ class WellsFargo:
         from_date = from_date.strftime('%m/%d/%y')
         to_date = to_date.strftime('%m/%d/%y')
 
-        with firefox_driver(ofx_dir, gui=self.gui) as driver:
+        with chrome_driver(ofx_dir, gui=self.gui) as driver:
 
             # Login to Wells Fargo's website.
             driver.get('https://www.wellsfargo.com/')
@@ -147,42 +202,58 @@ class WellsFargo:
             password_form.send_keys(self.password)
             password_form.submit()
 
-            # Open the "More" menu.
-            time.sleep(5)
-            more = wait_for_element_by_partial_link_text(driver, 'More')
-            more.click()
+            # Click on the "Accounts" menu.  This one is difficult to locate, 
+            # because it seems to have a dynamically generated id.
 
-            # Navigate to the "Download Your Account Activity" page.
-            wait_for_element_by_partial_link_text(driver, 'Accounts and Settings').click()
-            wait_for_element_by_partial_link_text(driver, 'Account Services').click()
-            wait_for_element_by_partial_link_text(driver, 'Account Management').click()
-            wait_for_element_by_partial_link_text(driver, 'Download Account Activity').click()
+            #wait_for_element_by_xpath(driver, '//li[@id="mwf-app-nav-accounts"]/button').click()
+            #ActionChains(driver).move_to_element(accounts).perform()  # hover
+
+            # Navigate to the "Download Account Activity" page.
+            #wait_for_element_by_partial_link_text(driver, 'Download Account Activity').click()
+            download = driver.find_element_by_link_text('Download Account Activity')
+            driver.execute_script('arguments[0].click()', download)
 
             # Download account activity in the OFX format.
+            #driver.get('file:///home/kale/wf.html')
+            print(ofx_dir)
             for i in itertools.count():
 
-                # Pick the next account to download.
-                accounts = wait_for_element_by_name(driver, 'primaryKey')
-                try: account = Select(accounts).options[i]
+                # Pick the next account to download.  This is inside the loop 
+                # to protect against the page being reloaded when the form was 
+                # submitted, ut that may not be an issue anymore.
+                accounts = driver.find_element_by_id('selectedAccountId')
+                try:
+                    account = Select(accounts).options[i]
+                    print(account.get_attribute('textContent'))
                 except IndexError: break
                 driver.execute_script("arguments[0].selected = true", account)
-                driver.execute_script('arguments[0].click()', driver.find_element_by_id("clickSubmit"))
-
-                # Not totally sure why this is necessary, but without it only 
-                # the first account in the dropdown box is downloaded.
-                time.sleep(1)
 
                 # Pick the date range to download.
-                driver.find_element_by_id('toDate').clear()
-                driver.find_element_by_id('fromDate').clear()
-                driver.find_element_by_id('toDate').send_keys(to_date)
-                driver.find_element_by_id('fromDate').send_keys(from_date)
+
+                # Need to use javascript because Wells Fargo makes the actual 
+                # forms invisible, so selenium won't let us interact with them 
+                # directly.  Not sure if this is actually working though, and 
+                # the defaults are fine (now; they didn't used to be)...
+                driver.execute_script(
+                        f'arguments[0].value = "{from_date}"',
+                        driver.find_element_by_id('fromDate'))
+
+                driver.execute_script(
+                        f'arguments[0].value = "{to_date}"',
+                        driver.find_element_by_id('toDate'))
+
+                # driver.find_element_by_id('fromDate').clear()
+                # driver.find_element_by_id('toDate').send_keys(to_date)
+                # driver.find_element_by_id('fromDate').send_keys(from_date)
+
+                # Pick the Quicken file format.  Note that we have to click on 
+                # the <span> element.  The actual <input> can't be clicked 
+                # because it's not visible, and clicking the parent <div> 
+                # doesn't do anything.
+                wait_for_element_by_xpath(driver, '//input[@id="quicken"]/../span').click()
 
                 # Download it.
-                driver.find_element_by_id('quickenOFX').click()
                 driver.find_element_by_name('Download').click()
-
-                time.sleep(1)
 
     def _parse(self, ofx_dir):
         accounts = []
@@ -195,6 +266,7 @@ class WellsFargo:
                     ofx = ofxparse.OfxParser.parse(ofx_file)
                 accounts += ofx.accounts
 
+        pprint(accounts)
         return accounts
 
 
