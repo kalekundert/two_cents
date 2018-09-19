@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 # encoding: utf-8
 
-try:
-    from setuptools import setup
-except ImportError:
-    from distutils.core import setup
+from setuptools import setup
 
 import re
 with open('two_cents/__init__.py') as file:
@@ -26,18 +23,12 @@ setup(
         'two_cents',
     ],
     entry_points = {
-        'console_scripts': ['two_cents=two_cents.cli:main'],
+        'console_scripts': ['two_cents_daemon=two_cents.daemon:main'],
     },
     include_package_data=True,
     install_requires=[
-        'SQLAlchemy',
-        'selenium',
-        'xvfbwrapper',
-        'ofxparse',
-        'docopt==0.6.2',
-        'appdirs',
-        'pathlib',
-        'prettytable',
+        'django',
+        'docopt',
     ],
     zip_safe=False,
     keywords=[
@@ -47,8 +38,5 @@ setup(
         'Development Status :: 2 - Pre-Alpha',
         'Natural Language :: English',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.3',
-        'Programming Language :: Python :: 3.4',
-        'Programming Language :: Python :: 3.5',
     ],
 )

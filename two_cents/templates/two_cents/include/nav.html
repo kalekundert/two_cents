@@ -1,0 +1,45 @@
+{% load static %}
+<nav class="navbar navbar-expand-sm bg-green navbar-dark">
+  <img class="navbar-brand" src="{% static 'two_cents/img/logo.png' %}" href="#">
+  <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#collapsibleNavbar">
+    <i class="fas fa-bars"></i>
+  </button>
+  <div class="collapse navbar-collapse" id="collapsibleNavbar">
+    <ul class="navbar-nav ml-auto">
+      {% if not user.is_authenticated %}
+        <li class="nav-item">
+          <a class="nav-link" href="{% url 'login' %}">Log in</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="{% url 'sign_up' %}">Sign up</a>
+        </li>
+      {% else %}
+        <li class="nav-item">
+          <a class="nav-link" href="{% url '2c_home' %}">Dashboard</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="{% url '2c_accounts' %}">Accounts</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="{% url '2c_transactions' %}">Transactions</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="{% url '2c_budgets' %}">Budgets</a>
+        </li>
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+            <i class="fas fa-user"></i>
+            {{ request.user }}
+          </a>
+          <ul class="dropdown-menu dropdown-menu-right" aria-labelledby="navbarDropdown">
+            <li><a class="dropdown-item" href="#">Action</a></li>
+            <li><a class="dropdown-item" href="#">Another action</a></li>
+            <li><div class="dropdown-divider"></div></li>
+            <li><a class="dropdown-item" href="#">Something else here</a></li>
+            <li><a class="dropdown-item" href={% url 'logout' %}>Log out</a></li>
+          </ul>
+        </li>
+      {% endif %}
+    </ul>
+  </div>  
+</nav>

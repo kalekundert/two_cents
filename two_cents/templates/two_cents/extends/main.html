@@ -1,0 +1,13 @@
+{% extends "two_cents/extends/body.html" %}
+
+{% block body %}
+{% include "two_cents/include/nav.html" %}
+
+<main class="container">
+{% block main %}Hello world{% endblock %}
+</main>
+
+{% include "two_cents/include/footer.html" %}
+{% endblock body %}
+
+

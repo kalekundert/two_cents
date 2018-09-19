@@ -1,0 +1,26 @@
+{% extends "two_cents/extends/main.html" %}
+
+{% block main %}
+
+  <p>
+  <button class="btn btn-primary" type="button" data-toggle="collapse" data-target="#addAccountForm">
+    Add an account
+  </button>
+  <div class="collapse" id="addAccountForm">
+    <form class="card card-body">
+      {{ add_account_form }}
+    </form>
+  </div>
+  </p>
+
+  <h2>Accounts</h2>
+
+  {% for account in accounts %}
+    <p class="card">
+      <h3>{{ account.title }}</h3>
+      Last update: {{ account.last_update }}
+      Linked to bank: {{ account.linked }}
+    </p>
+  {% endfor %}
+
+{% endblock %}
