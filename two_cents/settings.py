@@ -78,13 +78,13 @@ WSGI_APPLICATION = 'two_cents.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/2.1/ref/settings/#databases
 
-from two_cents.login import USER, PASSWORD
+from two_cents.secrets import DB_USER, DB_PASSWORD
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'two_cents',
-        'USER': USER,
-        'PASSWORD': PASSWORD,
+        'USER': DB_USER,
+        'PASSWORD': DB_PASSWORD,
         'HOST': 'localhost',
     }
 }

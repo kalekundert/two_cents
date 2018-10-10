@@ -22,13 +22,17 @@ import two_cents.views
 
 urlpatterns = [
     path('', two_cents.views.home, name='2c_home'),
+
     path('accounts/', two_cents.views.accounts, name='2c_accounts'),
+    path('accounts/add', two_cents.views.add_bank, name='2c_accounts_add'),
+    path('accounts/sync', two_cents.views.sync_bank, name='2c_accounts_sync'),
+
     path('budgets/', two_cents.views.budgets, name='2c_budgets'),
+
     path('transactions/', two_cents.views.transactions, name='2c_transactions'),
 
     path('user/', include('django.contrib.auth.urls')),
     path('user/sign-up/', two_cents.views.sign_up, name='sign_up'),
 
     path('admin/', admin.site.urls),
-    #path('api-auth/', include('rest_framework.urls')),
 ]

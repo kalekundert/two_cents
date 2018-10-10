@@ -29,6 +29,7 @@ setup(
     install_requires=[
         'django',
         'docopt',
+        'plaid-python',
     ],
     zip_safe=False,
     keywords=[

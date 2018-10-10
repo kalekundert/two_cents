@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import re
+from datetime import datetime
+
 from django.db import models
 from django.contrib.auth.models import User
 from django.db.models import CASCADE
@@ -23,54 +25,45 @@ class Model(models.Model):
 
 
 
-class Account(Model):
-    # An account can be owned by multiple users, e.g. a joint bank account.
-    users = models.ManyToManyField(User, through='AccountUser')
+class Bank(Model):
+    user = models.ForeignKey(User, on_delete=CASCADE)
     title = models.CharField(max_length=255)
     last_update = models.DateTimeField()
-    order = models.IntegerField()
+    ui_order = models.IntegerField()
+    plaid_item_id = models.CharField(max_length=64, unique=True)
+    plaid_access_token = models.CharField(max_length=64)
 
-class AccountUser(Model):
-    STATUS_CHOICES = (
-            ('confirmed', 'Confirmed'),
-            ('invited', 'Invited'),
-            ('requested', 'Requested'),
-    )
-    account = models.ForeignKey(Account, on_delete=CASCADE)
-    user = models.ForeignKey(User, on_delete=CASCADE)
-    status = models.CharField(max_length=24, choices=STATUS_CHOICES)
+    def __str__(self):
+        return f'{self.title} ({self.plaid_item_id})'
 
+class Account(Model):
+    remote_id = models.CharField(max_length=64, unique=True)
+    bank = models.ForeignKey(Bank, null=True, on_delete=CASCADE)
+    title = models.CharField(max_length=255)
+    last_digits = models.CharField(max_length=64)
+    ui_order = models.IntegerField()
 
-class AccountPlaid(Model):
-    # Keep the plaid details in their own table, so the schema isn't tightly 
-    # coupled to a single integration.  For example, I might want to allow 
-    # users to manually upload *.qfx files (that way, they won't need to trust 
-    # anyone with their bank login credentials).
-    account = models.OneToOneField(Account, on_delete=CASCADE)
-    access_token = models.CharField(max_length=32)
-    item_id = models.CharField(max_length=32)
-
+    def __str__(self):
+        return f'{self.title} ({self.remote_id})'
 
 class Budget(Model):
     # Transactions can only be assigned to budgets 
-    users = models.ManyToManyField(User, through='BudgetUser')
+    user = models.ForeignKey(User, on_delete=CASCADE)
     title = models.CharField(max_length=255)
     balance = models.FloatField()
     allowance = models.FloatField()
     last_update = models.DateTimeField()
-    order = models.IntegerField()
+    ui_order = models.IntegerField()
 
-class BudgetUser(Model):
-    user = models.ForeignKey(User, on_delete=CASCADE)
-    budget = models.ForeignKey(Budget, on_delete=CASCADE)
+    def __str__(self):
+        return self.title
 
 class Transaction(Model):
-    account = models.ForeignKey(Account, on_delete=CASCADE)
+    remote_id = models.CharField(max_length=64, unique=True)
+    account = models.ForeignKey(Account, null=True, on_delete=CASCADE)
     budgets = models.ManyToManyField(Budget, through='TransactionBudget')
     date = models.DateTimeField()
-    format = models.CharField(max_length=255)
     amount = models.FloatField()
-    category = models.CharField(max_length=255)
     description = models.CharField(max_length=255)
 
     # True if the transaction has been fully assigned, i.e. if the sum of the 
@@ -79,6 +72,8 @@ class Transaction(Model):
     # but it's important to be able to access this information quickly.
     assigned = models.BooleanField()
 
+    def __str__(self):
+        return f'{self.amount} ({self.remote_id})'
 
 class TransactionBudget(Model):
     # A single transaction can be assigned to multiple budgets, e.g. if you 
@@ -88,12 +83,35 @@ class TransactionBudget(Model):
     transaction = models.ForeignKey(Transaction, on_delete=CASCADE)
     amount = models.FloatField()
 
-# Work in progress: Automatically categorize certain transactions.
-class Filters:
-    pass
-class FilterCategory:
-    pass
-class FilterMerchant:
-    pass
-class FilterLearning:
-    pass
+def get_plaid_client():
+    import plaid
+    from two_cents import secrets
+
+    return plaid.Client(
+            client_id=secrets.PLAID_CLIENT_ID,
+            secret=secrets.PLAID_SECRET,
+            public_key=secrets.PLAID_PUBLIC_KEY,
+            environment=secrets.PLAID_ENVIRONMENT,
+    )
+
+def sync_transactions(bank):
+    client = get_plaid_client()
+    response = client.Transactions.get(
+            access_token=bank.plaid_access_token,
+            start_date='{:%Y-%m-%d}'.format(bank.last_update),
+            end_date='{:%Y-%m-%d}'.format(datetime.now()),
+    )
+
+    for fields in response['tranactions']:
+        transaction = Transaction(
+                remote_id=fields['account_id'],
+                account=Account.get(remote_id=fields['account_id']),
+                date=datetime.strptime(fields['date'], '%Y-%m-%d'),
+                amount=-float(fields['amount']),
+                description=fields['name'],
+                assigned=False,
+        )
+        transaction.save()
+
+    return response
+
