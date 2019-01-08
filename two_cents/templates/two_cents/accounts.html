@@ -8,6 +8,28 @@
 <p>
 <button class="btn btn-primary" id="link-button">Add Bank</button>
 </p>
+
+{% for bank in banks.all %}
+  <p>
+  <h2>{{ bank.title }}</h2>
+  <ul class="list-group">
+  {% for account in bank.account_set.all %}
+    <li class="list-group-item flex-column">
+        <h3>{{ account.title }}</h3>
+        <small>{{ account.last_digits }}</small>
+        <div class="h-100"/>
+        <p>$17,000</p>
+        <div>
+          Last update: {{ account.last_update | date:'n/d/Y' }} |
+          Remove <i class="fa fa-question-circle"></i>
+        </div>
+    </li>
+
+  {% endfor %}
+  </ul>
+  </p>
+{% endfor %}
+
 <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
 <script type="text/javascript">
   var handler = Plaid.create({
@@ -15,6 +37,7 @@
     env: 'sandbox',
     key: '{{ plaid_public_key }}',
     product: ['transactions'],
+    webhook: '{% url '2c_accounts_sync' $}',
     onSuccess: function(public_token, metadata) {
       // Send the public_token to your app server.
       // The metadata object contains info about the institution the
@@ -45,27 +68,5 @@
     handler.open();
   });
 </script>
-
   
-  {% for bank in banks.all %}
-    <p>
-    <h2>{{ bank.title }}</h2>
-    <ul class="list-group">
-    {% for account in bank.account_set.all %}
-      <li class="list-group-item flex-column">
-          <h3>{{ account.title }}</h3>
-          <small>{{ account.last_digits }}</small>
-          <div class="h-100"/>
-          <p>$17,000</p>
-          <div>
-            Last update: {{ account.last_update | date:'n/d/Y' }} |
-            Remove <i class="fa fa-question-circle"></i>
-          </div>
-      </li>
-
-    {% endfor %}
-    </ul>
-    </p>
-  {% endfor %}
-
 {% endblock %}
