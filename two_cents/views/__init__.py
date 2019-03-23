@@ -1,9 +1,7 @@
-#!/usr/bin/env python3
-
-from .home import *
-from .user import *
-from .accounts import *
-from .budgets import *
-from .transactions import *
-
-from .debug import *
+from . import home
+from . import banks
+from . import accounts
+from . import budgets
+from . import transactions
+from . import users
+from . import debug

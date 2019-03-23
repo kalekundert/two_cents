@@ -10,3 +10,8 @@ footer {
   color: #f0ddbe;
   background-color: #0f1610;
 }
+
+button.fa {
+  text-decoration: none !important;
+}
+

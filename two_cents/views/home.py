@@ -2,7 +2,7 @@
 
 from django.shortcuts import render, redirect
 
-def home(request):
+def show(request):
     if request.user.is_authenticated:
         # - If there are unassigned transactions, ask to assign them
         # - Display balances

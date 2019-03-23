@@ -32,9 +32,9 @@ args = docopt.docopt(__doc__)
 kind = args['<kind>'] or 'default'
 
 # Get an 'item_id' from the first bank in the database.
-bank = two_cents.Bank.objects.all()[0]
-item_id = bank.plaid_item_id
-print(bank)
+credential = two_cents.PlaidCredential.objects.all()[0]
+item_id = credential.plaid_item_id
+print(credential)
 
 # Prepare queries:
 queries = {
@@ -97,6 +97,6 @@ queries = {
 
 # Transaction notifications are posted as JSON to your webhook, and they might 
 # appear in a few different forms:
-response = requests.post('http://127.0.0.1:8000/accounts/sync/', json=queries[kind])
+response = requests.post('http://127.0.0.1:8000/banks/sync/', json=queries[kind])
 print(response.text)
 

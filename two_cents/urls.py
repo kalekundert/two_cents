@@ -14,26 +14,28 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
+import two_cents.views
+
 from django.contrib import admin
 from django.contrib.auth import views as auth
 from django.urls import path, include
 
-import two_cents.views
-
 urlpatterns = [
-    path('', two_cents.views.home, name='2c_home'),
+    path('', two_cents.views.home.show, name='2c_home'),
 
-    path('accounts/', two_cents.views.accounts, name='2c_accounts'),
-    path('accounts/add/', two_cents.views.add_bank, name='2c_accounts_add'),
-    path('accounts/sync/', two_cents.views.sync_bank, name='2c_accounts_sync'),
+    path('banks/add/', two_cents.views.banks.add, name='2c_banks_add'),
+    path('banks/sync/', two_cents.views.banks.sync, name='2c_banks_sync'),
 
-    path('budgets/', two_cents.views.budgets, name='2c_budgets'),
+    path('accounts/', two_cents.views.accounts.show, name='2c_accounts'),
+    path('accounts/toggle', two_cents.views.accounts.toggle, name='2c_accounts_toggle'),
 
-    path('transactions/', two_cents.views.transactions, name='2c_transactions'),
+    path('budgets/', two_cents.views.budgets.show, name='2c_budgets'),
 
-    path('user/', include('django.contrib.auth.urls')),
-    path('user/sign-up/', two_cents.views.sign_up, name='sign_up'),
+    path('transactions/', two_cents.views.transactions.show, name='2c_transactions'),
+
+    path('users/', include('django.contrib.auth.urls')),
+    path('users/sign-up/', two_cents.views.users.sign_up, name='sign_up'),
 
     path('admin/', admin.site.urls),
-    path('ping/', two_cents.views.ping)
+    path('ping/', two_cents.views.debug.ping)
 ]

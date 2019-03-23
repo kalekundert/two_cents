@@ -28,7 +28,8 @@ setup(
     include_package_data=True,
     install_requires=[
         'django',
-        'docopt',
+        'djangorestframework',
+        'django-model-utils',
         'plaid-python',
     ],
     zip_safe=False,

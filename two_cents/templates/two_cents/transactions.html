@@ -1,5 +1,42 @@
 {% extends "two_cents/extends/main.html" %}
 
 {% block main %}
-  <h2>Transactions</h2>
+<h2>Transactions</h2>
+
+<ul class="list-group">
+{% for txn in txns.all %}
+  <dl>
+    <dt>Account</dt>
+    <dd>{{ txn.account.name }}</dd>
+
+    <dt>Amount</dt>
+    <dd>{{ txn.amount }}</dd>
+
+    <dt>ID</dt>
+    <dd>{{ txn.remote_id }}</dd>
+
+    <dt>Date</dt>
+    <dd>{{ txn.date }}</dd>
+
+    <dt>Description</dt>
+    <dd>{{ txn.description }}</dd>
+
+    <dt>Fully Assigned?</dt>
+    <dd>{{ txn.fully_assigned }}</dd>
+
+    {% if txn.fully_assigned %}
+      <dt>Assigned to:</dt>
+      <dd>
+        <dl>
+          {% for assignment in get_assignments(txn) %}
+            <dd>{{ assignment.budget.title }}</dd>
+            <dd>{{ assignment.amount }}</dd>
+          {% endfor %}
+        </dl>
+      <dd>
+    {% endif %}
+  </dl>
+{% endfor %}
+</ul>
+
 {% endblock %}
