@@ -4,3 +4,6 @@ from django.apps import AppConfig
 
 class TwoCentsConfig(AppConfig):
     name = 'two_cents'
+
+    def ready(self):
+        import two_cents.signals

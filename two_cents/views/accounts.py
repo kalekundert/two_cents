@@ -29,7 +29,7 @@ def validate_account(request):
     except BaseException as err:
         raise ValidationError(str(err))
 
-    if not account.is_owned_by(request.user):
+    if not models.user_owns_account(request.user, account):
         raise PermissionDenied()
 
     return account

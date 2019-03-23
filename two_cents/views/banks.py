@@ -8,17 +8,16 @@ who are using Plaid to automatically monitor transaction information.
 import json
 
 from two_cents import models
-from two_cents.utils import *
 
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
-from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST as require_post
+from django.contrib.auth.decorators import login_required as require_login
 from django.http.response import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import redirect
 from django.utils import timezone
 
-@login_required
-@require_POST
+@require_post
+@require_login
 def add(request):
     """
     This method is triggered when a user successfully completes the Plaid Link 
@@ -46,7 +45,6 @@ def add(request):
     #  'link_session_id': 'fbe4b241-a285-4041-82fa-68890d37b85c',
     #  'public_token': 'public-sandbox-fdb2b881-7d34-42e8-ae9f-44d5ae7075d5'},
 
-    info('Adding a bank')
     post = json.loads(request.body)
     pprint(post)
 
@@ -91,9 +89,11 @@ def add(request):
     # }
 
     accounts = plaid_client.Accounts.balance.get(exchange['access_token'])
+    family = models.get_default_family(request.user)
 
     for i, fields in enumerate(accounts['accounts']):
         account = models.PlaidAccount.objects.create(
+                family=family,
                 remote_id=fields['account_id'],
                 title=fields['name'],
                 balance=fields['balances']['current'],
@@ -108,7 +108,7 @@ def add(request):
 
     return redirect('2c_home')
 
-@require_POST
+@require_post
 @csrf_exempt
 def sync(request):
     """

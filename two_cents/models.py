@@ -31,8 +31,25 @@ class Model(models.Model):
 
 ## Core tables:
 
+class Family(Model):
+    users = models.ManyToManyField(User, through='FamilyUser')
+
+    # Users can give their own titles to their families, but this is the title 
+    # to use if the user hasn't specified anything.  It is set when the family 
+    # is created in the first place, and cannot be modified.
+    default_title = models.CharField(max_length=255)
+
+    def __str__(self):
+        return ', '.join(u.username for u in self.users.all())
+
+class FamilyUser(Model):
+    user = models.ForeignKey(User, on_delete=CASCADE)
+    family = models.ForeignKey(Family, on_delete=CASCADE)
+    title = models.CharField(max_length=255, null=True)
+    ui_order = models.IntegerField()
+
 class Budget(Model):
-    users = models.ManyToManyField(User, through='BudgetUser')
+    family = models.ForeignKey(Family, on_delete=CASCADE)
     title = models.CharField(max_length=255)
     balance = models.FloatField()
     allowance = models.FloatField()
@@ -40,29 +57,23 @@ class Budget(Model):
     ui_order = models.IntegerField()
 
     def __str__(self):
-        return self.title
-
-class BudgetUser(Model):
-    user = models.ForeignKey(User, on_delete=CASCADE)
-    budget = models.ForeignKey(Budget, on_delete=CASCADE)
+        return f'Budget "{self.title}" for "{self.family}"'
 
 class Account(Model):
+    family = models.ForeignKey(Family, on_delete=CASCADE)
     title = models.CharField(max_length=255)
     balance = models.FloatField()
     last_digits = models.CharField(max_length=64)
     ignore = models.BooleanField()
     ui_order = models.IntegerField()
+
     objects = InheritanceManager()
 
     def __str__(self):
-        return self.title
-
-    def is_owned_by(self, user):
-        raise NotImplementedError
+        return f'Account "{self.title}" for "{self.family}"'
 
 class Transaction(Model):
-    objects = InheritanceManager()
-
+    account = models.ForeignKey(Account, on_delete=CASCADE)
     date = models.DateTimeField()
     amount = models.FloatField()
     description = models.CharField(max_length=255)
@@ -74,8 +85,10 @@ class Transaction(Model):
     # but it's important to be able to access this information quickly.
     fully_assigned = models.BooleanField()
 
+    objects = InheritanceManager()
+
     def __str__(self):
-        return f'{self.amount} ({self.remote_id})'
+        return f'${self.amount} ({self.description})'
 
 class TransactionBudget(Model):
     # A single transaction can be assigned to multiple budgets, e.g. if you 
@@ -126,9 +139,6 @@ class PlaidAccount(Account):
     def __str__(self):
         return f'{self.title} ({self.remote_id})'
 
-    def is_owned_by(self, user):
-        return any(user == cred.user for cred in self.credentials.all())
-
 
 class PlaidAccountCredential(Model):
     """
@@ -143,21 +153,15 @@ class PlaidAccountCredential(Model):
 
 class PlaidTransaction(Transaction):
     remote_id = models.CharField(max_length=64, unique=True)
-    account = models.ForeignKey(PlaidAccount, on_delete=CASCADE)
 
 ## OFX tables:
 
 class OfxAccount(Account):
     remote_id = models.IntegerField()
-    user = models.ForeignKey(User, on_delete=CASCADE)
     last_update = models.DateTimeField()
-
-    def is_owned_by(self, user):
-        return user == self.user
 
 class OfxTransaction(Transaction):
     remote_id = models.IntegerField()
-    account = models.ForeignKey(OfxAccount, on_delete=CASCADE)
 
 ## Helper functions:
 
@@ -216,5 +220,42 @@ def sync_transactions(credential):
     return response
 
 
+def get_families(user):
+    return Family.objects.filter(users=user).all()
+
+def get_default_family(user):
+    return get_families(user)[0]
+
+def get_budgets(user):
+    return Budget.objects.filter(family__users=user).order_by('ui_order')
+
 def get_assignments(txn):
     return TransactionBudget.objects.query(transaction=txn)
+
+def init_user(user):
+    # Make a family for the user.
+    family = Family.objects.create(
+            default_title=user.username,
+    )
+    FamilyUser.objects.create(
+            user=user,
+            family=family,
+            ui_order=0,
+    )
+
+    # Make some default budgets for the user.  They can change or get rid of 
+    # these later, but they're a good starting point.
+    default_budgets = "Necessities", "Luxuries", "Surprises"
+
+    for i, title in enumerate(default_budgets):
+        Budget.objects.create(
+                family=family,
+                title=title,
+                balance=0,
+                allowance=0,
+                last_update=timezone.now(),
+                ui_order=i,
+        )
+
+def user_owns_account(user, account):
+    return user in account.family.users.all()

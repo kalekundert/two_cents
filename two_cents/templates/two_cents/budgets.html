@@ -1,5 +1,22 @@
 {% extends "two_cents/extends/main.html" %}
 
 {% block main %}
-  <h2>Budgets</h2>
+<h2>Budgets</h2>
+
+<form action="{% url "2c_budgets_add" %}" method="post">
+{% csrf_token %}
+{% for budget in budgets %}
+  <ul>
+    {{ budget.form.as_ul }}
+    <li>Balance: {{ budget.model.balance }}</li>
+    <li><button>Move up</button></li>
+    <li><button>Move down</button></li>
+  </ul>
+{% endfor %}
+  <ul>
+    {{ add_budget_form.as_ul }}
+    <li><button id="add-budget">Add Budget</button></li>
+  </ul>
+</form>
+
 {% endblock %}
