@@ -34,6 +34,11 @@ class Model(models.Model):
 class Family(Model):
     users = models.ManyToManyField(User, through='FamilyUser')
 
+    # Indicate that this particular family represents just the user.  A 
+    # so-called "personal" family is automatically created for each user when 
+    # they sign up.  It cannot be deleted, and new members cannot be added.
+    is_personal = models.BooleanField()
+
     # Users can give their own titles to their families, but this is the title 
     # to use if the user hasn't specified anything.  It is set when the family 
     # is created in the first place, and cannot be modified.
@@ -42,11 +47,28 @@ class Family(Model):
     def __str__(self):
         return ', '.join(u.username for u in self.users.all())
 
+    def get_title(self, user):
+        link = FamilyUser.filter(family=self, user=user).get()
+        return link.title
+
 class FamilyUser(Model):
     user = models.ForeignKey(User, on_delete=CASCADE)
     family = models.ForeignKey(Family, on_delete=CASCADE)
-    title = models.CharField(max_length=255, null=True)
+    custom_title = models.CharField(max_length=255, null=True)
     ui_order = models.IntegerField()
+
+    @property
+    def title(self):
+        return self.custom_title or self.family.default_title
+
+class Bill(Model):
+    family = models.ForeignKey(Family, on_delete=CASCADE)
+    title = models.CharField(max_length=255)
+    expense = models.FloatField()
+    ui_order = models.IntegerField()
+
+    def __str__(self):
+        return f"Budget(family={self.family}, title={self.title}, expense={self.expense})"
 
 class Budget(Model):
     family = models.ForeignKey(Family, on_delete=CASCADE)
@@ -221,13 +243,22 @@ def sync_transactions(credential):
 
 
 def get_families(user):
-    return Family.objects.filter(users=user).all()
+    return Family.objects.filter(users=user)
+
+def get_personal_family(user):
+    return Family.objects.filter(users=user, is_personal=True).get()
 
 def get_default_family(user):
-    return get_families(user)[0]
+    return get_personal_family(user)
 
 def get_budgets(user):
     return Budget.objects.filter(family__users=user).order_by('ui_order')
+
+def get_incomes(user):
+    return Bill.objects.filter(family__users=user, expense__gt=0).order_by('ui_order')
+
+def get_bills(user):
+    return Bill.objects.filter(family__users=user, expense__lt=0).order_by('ui_order')
 
 def get_assignments(txn):
     return TransactionBudget.objects.query(transaction=txn)
@@ -235,7 +266,8 @@ def get_assignments(txn):
 def init_user(user):
     # Make a family for the user.
     family = Family.objects.create(
-            default_title=user.username,
+            default_title="Personal",
+            is_personal=True,
     )
     FamilyUser.objects.create(
             user=user,

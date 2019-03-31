@@ -30,7 +30,6 @@ urlpatterns = [
     path('accounts/toggle', two_cents.views.accounts.toggle, name='2c_accounts_toggle'),
 
     path('budgets/', two_cents.views.budgets.show, name='2c_budgets'),
-    path('budgets/add', two_cents.views.budgets.add, name='2c_budgets_add'),
 
     path('transactions/', two_cents.views.transactions.show, name='2c_transactions'),
 
