@@ -1,7 +1,7 @@
 {% extends "two_cents/extends/main.html" %}
 
 {% block main %}
-<form action="{% url "2c_budgets" %}" method="post"/>
+<form action="{% url "2c_budgets" %}" method="post">
   {% csrf_token %}
   <h2>Income</h2>
   <table>

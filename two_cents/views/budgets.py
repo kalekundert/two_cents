@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
+from two_cents import models
+
+from django import forms
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required as require_login
 from django.views.decorators.http import require_POST as require_post
-from django import forms
-from django.forms import modelformset_factory
-from two_cents import models
-from two_cents.forms import FamilyChoiceField
+from django.forms import modelformset_factory, ModelChoiceField
+from django.forms.widgets import HiddenInput
 
 @require_login
 def show(request):
@@ -14,17 +15,17 @@ def show(request):
     # - Option to add/delete/rename/reorder/change allowance.
 
     forms = {
-            'income': BillFormWrapper(
+            'income': BillForm(
                     request,
                     prefix='income',
                     queryset=models.get_incomes(request.user),
             ),
-            'bill': BillFormWrapper(
+            'bill': BillForm(
                     request,
                     prefix='bill',
                     queryset=models.get_bills(request.user),
             ),
-            'budget': BudgetFormWrapper(
+            'budget': BudgetForm(
                     request,
                     prefix='budget',
                     queryset=models.get_budgets(request.user),
@@ -36,7 +37,7 @@ def show(request):
 
     return render(request, 'two_cents/budgets.html', context=locals())
 
-class FormWrapper:
+class FormsetWrapper:
 
     def __init__(self, request, **kwargs):
         self.request = request
@@ -71,7 +72,7 @@ class FormWrapper:
     def save_form(self):
         self.formset.save()
 
-class BillFormWrapper(FormWrapper):
+class BillForm(FormsetWrapper):
 
     def make_form(self, post, **kwargs):
         formset_cls = modelformset_factory(
@@ -89,7 +90,7 @@ class BillFormWrapper(FormWrapper):
             bill.ui_order = i
             bill.save()
 
-class BudgetFormWrapper(FormWrapper):
+class BudgetForm(FormsetWrapper):
 
     def make_form(self, post, **kwargs):
         formset_cls = modelformset_factory(
@@ -108,5 +109,36 @@ class BudgetFormWrapper(FormWrapper):
         for i, budget in enumerate(budgets):
             budget.ui_order = i
             budget.save()
+
+class FamilyChoiceField(ModelChoiceField):
+    """
+    Allow the user to select one of their families.
+
+    If the user only has their personal family, no choice is presented and that 
+    family is returned to the backend as a hidden form element.  If the user 
+    does have families to choose between, those families are presented as a 
+    dropdown box.
+
+    Note that this field requires that the user object be given as an argument 
+    to the constructor.  This more or less requires that the whole form (or 
+    formset) be assembled directly in the view, rather than at module scope.
+    """
+
+    def __init__(self, user):
+        self.user = user
+
+    def __call__(self, **kwargs):
+        super().__init__(
+                initial=models.get_default_family(self.user),
+                **kwargs
+        )
+
+        if len(kwargs['queryset']) == 1:
+            self.widget = HiddenInput()
+
+        return self
+
+    def label_from_instance(self, family):
+        return family.get_title(self.user)
 
 

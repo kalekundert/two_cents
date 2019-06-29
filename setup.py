@@ -31,6 +31,7 @@ setup(
         'djangorestframework',
         'django-model-utils',
         'plaid-python',
+        'mysqlclient',
     ],
     zip_safe=False,
     keywords=[

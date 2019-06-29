@@ -7,7 +7,7 @@ from django.contrib.auth.models import User
 from django.db.models import CASCADE
 from django.utils import timezone
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from model_utils.managers import InheritanceManager
 
 registered_models = []
@@ -110,7 +110,7 @@ class Transaction(Model):
     objects = InheritanceManager()
 
     def __str__(self):
-        return f'${self.amount} ({self.description})'
+        return f'Transaction in {self.account} for "{self.description}" worth "{self.amount}"'
 
 class TransactionBudget(Model):
     # A single transaction can be assigned to multiple budgets, e.g. if you 
@@ -209,18 +209,18 @@ def get_plaid_account(remote_id):
 
 
 def get_transactions(user):
-    # Not this simple; need to separately get Plaid and OFX transactions, 
-    # because the two have different logic for determining ownership.
-    pass
-    # return Transaction.objects.filter(user=user)
+    return Transaction.objects.filter(account__family__users=user)
 
 def sync_transactions(credential):
     client = get_plaid_client()
-    now = timezone.now()
+    # Go back an extra 30 days to make sure we don't miss anything.
+    start_date = credential.last_update - timedelta(days=30)
+    end_date = timezone.now()
+
     response = client.Transactions.get(
             access_token=credential.plaid_access_token,
-            start_date='{:%Y-%m-%d}'.format(credential.last_update),
-            end_date='{:%Y-%m-%d}'.format(now),
+            start_date='{:%Y-%m-%d}'.format(start_date),
+            end_date='{:%Y-%m-%d}'.format(end_date),
     )
     pprint(response)
 
@@ -236,7 +236,7 @@ def sync_transactions(credential):
                 ),
         )
 
-    credential.last_update = now
+    credential.last_update = end_date
     credential.save()
 
     return response
