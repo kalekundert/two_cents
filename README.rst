@@ -29,17 +29,45 @@ for the budget to return to the black.
    :target: https://coveralls.io/github/kalekundert/two_cents?branch=master
 
 
-Installation
-------------
-Two Cents is available on PyPI, so you can install it with ``pip``::
+Deployment
+----------
+Install Two Cents from PyPI:
 
    pip install two_cents
 
-Most of the dependencies will be installed automatically by ``pip``, but you 
-will probably have to install ``Xvfb`` (X Virtual Frame Buffer) from your 
-package manager.  On Fedora, the command is::
+Specify the configuration options specific to your deployment in a python 
+script conventionally named ``site_settings.py``.  This script has the same 
+syntax as the regular Django ``settings.py`` file.  The following values must 
+be specified::
 
-   $ sudo dnf install xorg-x11-server-Xvfb
+   # 50 random alpha/numeric/symbol characters.
+   SECRET_KEY = ...
+
+   DATABASES['default']['NAME'] = ...
+   DATABASES['default']['USER'] = ...
+   DATABASES['default']['PASSWORD'] = ...
+   DATABASES['default']['HOST'] = ...
+   DATABASES['default']['PORT'] = ...
+
+   PLAID_CLIENT_ID = ...
+   PLAID_SECRET = ...
+   PLAID_PUBLIC_KEY = ...
+   PLAID_ENVIRONMENT = ...
+
+Note that Two Cents is tested with MariaDB (e.g. MySQL), so that is the default 
+database backend.  Other backends may also work, but are not supported.  Any 
+other option understood by Django can be specified as well.  Options specified 
+in this file will override the built-in Two Cents settings, although this 
+should rarely be necessary.
+
+Specify the path to the above ``site_settings.py`` file in an environment 
+variable called ``$TWO_CENTS_SITE_SETTINGS``::
+
+   $ export TWO_CENTS_SITE_SETTINGS=/path/to/site_settings.py
+
+Finally, launch website using the WSGI server of you choice::
+
+   $ gunicorn two_cents.wsgi
 
 Basic Usage
 -----------

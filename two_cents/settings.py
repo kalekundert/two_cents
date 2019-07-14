@@ -12,26 +12,11 @@ https://docs.djangoproject.com/en/2.1/ref/settings/
 
 import os
 
-# Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+ROOT_URLCONF = 'two_cents.urls'
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/2.1/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'iw4c8x!)5aki79m9m6#xp&vx6cbeu6@n+r15k0a*-kv3#_*@*-'
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = []
-
-
-# Application definition
-
-LOGIN_URL = 'login'
-LOGIN_REDIRECT_URL = '2c_home'
+WSGI_APPLICATION = 'two_cents.wsgi.application'
 
 INSTALLED_APPS = [
         'two_cents.apps.TwoCentsConfig',
@@ -54,8 +39,6 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'two_cents.urls'
-
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -72,26 +55,22 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'two_cents.wsgi.application'
-
 
 # Database
 # https://docs.djangoproject.com/en/2.1/ref/settings/#databases
 
-from two_cents.secrets import DB_USER, DB_PASSWORD
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'two_cents',
-        'USER': DB_USER,
-        'PASSWORD': DB_PASSWORD,
-        'HOST': 'localhost',
     }
 }
 
-
-# Password validation
+# Authentication
 # https://docs.djangoproject.com/en/2.1/ref/settings/#auth-password-validators
+
+LOGIN_URL = 'login'
+
+LOGIN_REDIRECT_URL = '2c_home'
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -108,13 +87,12 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
 # https://docs.djangoproject.com/en/2.1/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'America/Los_Angeles'
+TIME_ZONE = 'America/New_York'
 
 USE_I18N = True
 
@@ -122,8 +100,49 @@ USE_L10N = True
 
 USE_TZ = True
 
-
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/2.1/howto/static-files/
 
 STATIC_URL = '/static/'
+
+
+# Deployment-specific settings:
+
+class TwoCentsSettingsError(Exception):
+    pass
+
+try:
+    site_settings_py = os.environ['TWO_CENTS_SITE_SETTINGS']
+    not_found_error = f"site settings file not found: '{site_settings_py}'"
+    
+except KeyError:
+    site_settings_py = os.path.join(BASE_DIR, 'site_settings.py')
+    not_found_error = f"$TWO_CENTS_SITE_SETTINGS not specified, and default file not found: '{site_settings_py}'"
+
+if not os.path.exists(site_settings_py):
+    raise TwoCentsSettingsError(not_found_error)
+
+
+# Execute the site settings in the current namespace.  I don't think this is 
+# unsafe: the site settings file can execute arbitrary code, but if an attacker 
+# could overwrite files on the web server, they could execute arbitrary code by 
+# changing the daemon script anyways.  The advantages of this approach is that 
+# the site settings file will have all the same syntax and power as the 
+# standard Django settings file.
+
+with open(site_settings_py) as f:
+    exec(f.read())
+
+# Check that all the necessary settings were specified.
+
+necessary_settings = [
+        'SECRET_KEY',
+        'PLAID_CLIENT_ID',
+        'PLAID_SECRET',
+        'PLAID_PUBLIC_KEY',
+        'PLAID_ENVIRONMENT',
+]
+
+for setting in necessary_settings:
+    if setting not in globals():
+        raise TwoCentsSettingsError(f"missing required setting: {setting}")
