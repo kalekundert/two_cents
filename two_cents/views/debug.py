@@ -5,6 +5,8 @@ from django.shortcuts import render, redirect
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
 
+from pprint import pprint
+
 @csrf_exempt
 def ping(request):
     print('GET')

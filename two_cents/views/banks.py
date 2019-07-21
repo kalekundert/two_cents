@@ -5,8 +5,6 @@ Views for managing bank information.  These views are only relevant to users
 who are using Plaid to automatically monitor transaction information.
 """
 
-import json
-
 from two_cents import models
 
 from django.views.decorators.csrf import csrf_exempt
@@ -15,6 +13,9 @@ from django.contrib.auth.decorators import login_required as require_login
 from django.http.response import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import redirect
 from django.utils import timezone
+
+import json
+from pprint import pprint
 
 @require_post
 @require_login
