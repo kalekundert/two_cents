@@ -189,13 +189,13 @@ class OfxTransaction(Transaction):
 
 def get_plaid_client():
     import plaid
-    from two_cents import secrets
+    from two_cents import settings
 
     return plaid.Client(
-            client_id=secrets.PLAID_CLIENT_ID,
-            secret=secrets.PLAID_SECRET,
-            public_key=secrets.PLAID_PUBLIC_KEY,
-            environment=secrets.PLAID_ENVIRONMENT,
+            client_id=settings.PLAID_CLIENT_ID,
+            secret=settings.PLAID_SECRET,
+            public_key=settings.PLAID_PUBLIC_KEY,
+            environment=settings.PLAID_ENVIRONMENT,
     )
 
 def get_plaid_credential(user):

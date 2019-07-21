@@ -4,7 +4,7 @@ import json
 import functools
 
 from two_cents import models
-from two_cents.secrets import PLAID_PUBLIC_KEY, PLAID_ENVIRONMENT
+from two_cents.settings import PLAID_PUBLIC_KEY, PLAID_ENVIRONMENT
 
 from django import forms
 from django.http.response import HttpResponse, HttpResponseBadRequest
