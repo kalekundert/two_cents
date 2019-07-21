@@ -57,8 +57,7 @@
       env: '{{ plaid_environment }}',
       key: '{{ plaid_public_key }}',
       product: ['transactions'],
-      /* I'll need to provide this when I start hosting for real. */
-      /*webhook: '{{ webhook_url }}',*/
+      webhook: '{{ webhook_url }}',
       onSuccess: function(public_token, metadata) {
         // Send the public_token to your app server.
         // The metadata object contains info about the institution the
