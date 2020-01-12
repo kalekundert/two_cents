@@ -1,0 +1,3 @@
+[submodule "two_cents/static/x-help"]
+	path = two_cents/static/xhelp
+	url = git@github.com:kalekundert/x-help.git
