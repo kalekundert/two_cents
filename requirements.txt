@@ -1,6 +1,7 @@
 django==3.0.2
 django-model-utils==4.0.0
 djangorestframework==3.11.0
+dj_database_url
 psycopg2>=2.5.4
 plaid-python==3.4.0
 Jinja2==2.10.3
