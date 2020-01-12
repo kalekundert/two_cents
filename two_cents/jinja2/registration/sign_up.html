@@ -1,0 +1,17 @@
+{% extends "two_cents/extends/main.html" %}
+
+{% block title %}
+Sign Up
+{% endblock %}
+
+{% block content %}
+  <h1>Sign Up</h1>
+
+  <form method="post">
+    {{ csrf_input }}
+    {{ form.as_p() }}
+    <button type="submit">Sign Up</button>
+  </form>
+
+{% endblock %}
+

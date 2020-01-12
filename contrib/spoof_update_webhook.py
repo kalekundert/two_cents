@@ -4,9 +4,13 @@
 Trigger the development server to query Plaid for new transactions.
 
 Usage:
-    spoof_update_webhook.py [<kind>]
+    spoof_update_webhook.py [<host>] [<kind>]
 
 Arguments:
+    <host>
+        Where to send the update request.  By default, the request is sent to 
+        the local development server.
+    
     <kind>
         The kind of transaction update to spoof.  Options are:
         - "default": An update as a result of routine polling.
@@ -29,12 +33,14 @@ import two_cents.models as two_cents
 # behalf of any user.
 
 args = docopt.docopt(__doc__)
+host = args['<host>'] or 'http://127.0.0.1:8000'
 kind = args['<kind>'] or 'default'
 
 # Get an 'item_id' from the first bank in the database.
-credential = two_cents.PlaidCredential.objects.all()[0]
-item_id = credential.plaid_item_id
-print(credential)
+#credential = two_cents.PlaidCredential.objects.all()[0]
+#item_id = credential.plaid_item_id
+#print(credential)
+item_id = 'mYdOzBk0DNTEqVYkdVdJCQAm90ZQrQSM1xPv8'
 
 # Prepare queries:
 queries = {
@@ -95,8 +101,11 @@ queries = {
         },
 }
 
-# Transaction notifications are posted as JSON to your webhook, and they might 
-# appear in a few different forms:
-response = requests.post('http://127.0.0.1:8000/banks/sync/', json=queries[kind])
+print("Request:")
+pprint(queries[kind])
+
+response = requests.post(f'{host}/banks/sync/', json=queries[kind])
+
+print("Response:")
 print(response.text)
 

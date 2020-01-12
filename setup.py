@@ -32,6 +32,7 @@ setup(
         'django-model-utils',
         'plaid-python',
         'mysqlclient',
+        'jinja2',
     ],
     zip_safe=False,
     keywords=[

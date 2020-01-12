@@ -40,7 +40,6 @@ script conventionally named ``site_settings.py``.  This script has the same
 syntax as the regular Django ``settings.py`` file.  The following values must 
 be specified::
 
-   # 50 random alpha/numeric/symbol characters.
    SECRET_KEY = ...
 
    DATABASES['default']['NAME'] = ...
@@ -53,6 +52,15 @@ be specified::
    PLAID_SECRET = ...
    PLAID_PUBLIC_KEY = ...
    PLAID_ENVIRONMENT = ...
+
+The ``SECRET_KEY`` is used by Django to sign various things, and should be 
+long, unique, and secret.  The following snippet (from `Stack Overflow`__) is a 
+simple way to generate a new key::
+
+   import os, binascii
+   binascii.hexlify(os.urandom(32)) 
+
+__ https://stackoverflow.com/questions/34897740/whats-the-simplest-and-safest-method-to-generate-a-api-key-and-secret-in-python
 
 Note that Two Cents is tested with MariaDB (e.g. MySQL), so that is the default 
 database backend.  Other backends may also work, but are not supported.  Any 

@@ -1,0 +1,42 @@
+{% extends "two_cents/extends/main.html" %}
+
+{% block content %}
+<h1>Transactions</h1>
+
+<form action="{{ url("2c_transactions") }}" method="post">
+  {{ csrf_input }}
+
+  <ul class="list-group">
+  {% for txn, form in forms %}
+    <li>
+      <dl>
+        <dt>Account</dt>
+        <dd>{{ txn.account.title }}</dd>
+
+        <dt>Amount</dt>
+        <dd>{{ txn.amount }}</dd>
+
+        <dt>Date</dt>
+        <dd>{{ txn.date }}</dd>
+
+        <dt>Description</dt>
+        <dd>{{ txn.description }}</dd>
+
+        <dt>Assigned to</dt>
+        <dd><table>{{ form }}<table></dd>
+      </dl>
+    </li>
+  {% endfor %}
+  </ul>
+  <button>Save</button>
+</form>
+
+<h1>To do</h1>
+<ul>
+  <li>Amount is only required if the transaction is being split.</li>
+  <li>Determine if transactions are fully assigned.</li>
+  <li>Actually subtract from budget (and add to old budget if being reassigned).</li>
+</ul>
+
+
+{% endblock %}

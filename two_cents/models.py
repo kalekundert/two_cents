@@ -261,6 +261,9 @@ def get_incomes(user):
 def get_bills(user):
     return Bill.objects.filter(family__users=user, expense__lt=0).order_by('ui_order')
 
+def get_bills_and_incomes(user):
+    return Bill.objects.filter(family__users=user).order_by('ui_order')
+
 def get_assignments(txn):
     return TransactionBudget.objects.query(transaction=txn)
 

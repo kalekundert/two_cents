@@ -1,0 +1,66 @@
+{% extends "two_cents/extends/main.html" %}
+
+{% block head %}
+  <link rel="stylesheet" type="text/css" href="{{ static('normalize.css') }}">
+  <link rel="stylesheet" type="text/css" href="{{ static('fontawesome/css/all.css') }}">
+  <link rel="stylesheet" type="text/css" href="{{ static('xhelp/css/xhelp.css') }}">
+  <link rel="stylesheet" type="text/css" href="{{ static('2c/css/two_cents.css') }}">
+  <link rel="stylesheet" type="text/css" href="{{ static('2c/css/icons.css') }}">
+  <link rel="stylesheet" type="text/css" href="{{ static('2c/css/budgets.css') }}">
+  <script src="{{ static('jquery.js') }}"></script>
+  <script src="{{ static('jquery-ui/jquery-ui.js') }}"></script>
+  <script src="{{ static('xhelp/js/xhelp.js') }}"></script>
+  <script src="{{ static('2c/js/budgets.js') }}"></script>
+{% endblock %}
+
+{% macro budget_table(formset) %}
+  <div class="budget-row">
+    <div class="header title">{{ caller() }}</div>
+    <div class="header allowance">$/mo</div>
+  </div>
+
+  <div class="budget-table" data-prefix="{{ formset.prefix }}">
+    {{ formset.management_form }}
+
+    {% for form in formset -%}
+      {{ budget_row(form) }}
+    {%- endfor %}
+    <div class="budget-row-template">
+      {{ budget_row(formset.empty_form) }}
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro budget_row(form) %}
+  <div class="budget-row">
+    {{ form.id }}
+    {{ form.ui_order }}
+    {{ form.title }}
+    {{ form.expense }}
+    <button type="button" class="icon drag">
+      <span class="i-drag"></span>
+    </button>
+    <button type="button" class="icon add">
+      <span class="i-add"></span>
+    </button>
+    <button type="button" class="icon remove">
+      <span class="i-remove"></span>
+    </button>
+  </div>
+{% endmacro %}
+
+{% block content %}
+<h1>Budgets</h1>
+
+<form id="budget-form" action="{{ url("2c_budgets") }}" method="post">
+  {{ csrf_input }}
+
+  {% call budget_table(forms.bill.formset) %}
+    Income and Bills <x-help>Recurring payments that you can't easily change 
+      from month to month, e.g. rent, utilities, paychecks, etc.</x-help>
+  {% endcall %}
+
+  <button type="submit">Save</button>
+</form>
+
+{% endblock %}

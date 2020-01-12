@@ -1,17 +1,231 @@
-.bg-green {
-    background-color: #5a6749;
+@font-face {
+  font-family: Garibaldi;
+  src: url('../fonts/garibaldi.otf');
 }
 
-.navbar-toggler {
-  border: none
+/* https://css-tricks.com/box-sizing/ */
+/* https://css-tricks.com/inheriting-box-sizing-probably-slightly-better-best-practice/ */
+html {
+  box-sizing: border-box;
+}
+*, *:before, *:after {
+  box-sizing: inherit;
+}
+
+*:focus {
+    outline: none;
+}
+
+.hidden {
+  display: none;
+}
+
+.xhelp-button {
+  font-size: 0.8rem;
+}
+
+.xhelp-button:active {
+  top: 1px;
+  left: 1px;
+}
+
+.xhelp-message {
+  top: 1.2em;
+  width: 300px;
+  max-width: max-content;
+  padding: 0.5em;
+  background-color: #acbab8;
+  font-weight: normal;
+  /*outline: solid 1px #6c7695;*/
+  /*box-shadow: 1px 1px 0px #6c7695;*/
+  /*box-shadow: 2px 2px 0px #0f1610;*/
+}
+
+/* Remove default button style, so I can build on top of it. */
+button {
+	background: none;
+	color: inherit;
+	border: none;
+	padding: 0;
+	font: inherit;
+	cursor: pointer;
+	outline: inherit;
+}
+
+.icon {
+  /*color: #d0ceaf; outline green*/
+  /*color: #5a6749; darker green*/
+  color: #7b634a; /* brown */
+  /*color: #5d3a28; darker brown */
+}
+.icon:active {
+  position: relative;
+  top: 1px;
+  left: 1px;
+}
+
+.icon:hover {
+  color: #5d3a28; /* darker brown */
+}
+
+a {
+  color: #203484;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/*
+button {
+  display: inline-block;
+  border: none;
+  margin: 0;
+  padding: 4px;
+  text-decoration: none;
+  background-color: #d0ceaf;
+  font-family: Tinos;
+  font-size: 1rem;
+  cursor: pointer;
+  text-align: center;
+}
+
+button:hover {
+  box-shadow: 2px 2px 0px #8b9184;
+}
+
+button:active {
+  position:relative;
+  left: 2px;
+  top: 2px;
+  box-shadow: none;
+}
+*/
+
+input {
+  display: inline-block;
+  border: 1px solid #d0ceaf;
+  border-radius: 0;
+  padding: 4px;
+  font-family: Tinos;
+  font-size: 1rem;
+  width: 100%;
+  transition: box-shadow 0.2s ease;
+}
+
+input:focus {
+  box-shadow: 1px 1px 0px #8b9184;
+}
+
+/* Layout */
+
+body {
+  margin: 0px;
+  background-color: #f7f7ef;
+  font-family: Tinos;
+  width: 100vw;
+  height: 100vh;
+
+  display: grid;
+  grid-template-rows: [header-start] 60px  [header-end content-start] auto [content-end footer-start] 30px [footer-end];
+  grid-template-columns: [stretch-start] auto [fixed-start] 580px [fixed-end] auto [stretch-end];
+  grid-template-areas:
+    " . header  . "
+    " . content . "
+    " . footer  . ";
+  grid-row-gap: 10px;
+}
+
+#banner {
+  background-image: url('../img/banner_border.jpg');
+  grid-area: header-start / stretch-start / header-end / stretch-end;
+}
+
+header {
+  grid-area: header;
+  display: flex;
+  justify-content: space-between;
+}
+
+header nav {
+  display: flex;
+  align-items: flex-end;
+}
+
+header nav a {
+  display: inline-block;
+  margin-left: 8px;
+  margin-right: 8px;
+  height: 30px;
+  font-size: 16px;
+  text-shadow: 1.5px 1.5px 0px #0f1610;
+  font-family: Tinos;
+  font-weight: normal;
+  line-height: 24px;
+  text-decoration: none;
+  text-align: center;
+  color: #f7f7ef;
+  outline: 0;
+}
+
+header nav a:hover {
+  text-decoration: underline;
+}
+
+header nav a:active {
+  text-decoration: underline;
+  position: relative;
+  left: 1px;
+  top: 1px;
+}
+
+main {
+  grid-area: content;
+}
+
+main > * {
+  margin-top: 10px
+}
+
+main h1 {
+  display: inline-block;
+  width: 600px;
+  height: 28px;
+  background-color: #d0ceaf;
+  padding-left: 10px;
+  margin: 0px;
+  margin-bottom: 10px;
+  margin-left: -10px;
+  margin-right: -10px;
+  font-size: 18px;
+  font-weight: normal;
+  line-height: 28px;
+}
+
+main h2 {
+  display: inline-block;
+  width: 600px;
+  height: 24px;
+  padding-left: 10px;
+  margin: 0px;
+  margin-bottom: 10px;
+  margin-left: -10px;
+  margin-right: -10px;
+  font-size: 16px;
+  font-weight: normal;
+  line-height: 24px;
+  background-color: #fcea9a;
 }
 
 footer {
-  color: #f0ddbe;
-  background-color: #0f1610;
+  grid-area: footer;
+  border-top: 1px solid #d0ceaf;
+
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
 }
 
-button.fa {
-  text-decoration: none !important;
-}
+
 

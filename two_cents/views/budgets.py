@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from two_cents import models
+from pprint import pprint
 
 from django import forms
 from django.shortcuts import render, redirect
@@ -16,15 +17,10 @@ def show(request):
     # - Option to add/delete/rename/reorder/change allowance.
 
     forms = {
-            'income': BillForm(
-                    request,
-                    prefix='income',
-                    queryset=models.get_incomes(request.user),
-            ),
             'bill': BillForm(
                     request,
                     prefix='bill',
-                    queryset=models.get_bills(request.user),
+                    queryset=models.get_bills_and_incomes(request.user),
             ),
             'budget': BudgetForm(
                     request,
@@ -32,9 +28,10 @@ def show(request):
                     queryset=models.get_budgets(request.user),
             ),
     }
+    pprint(request.POST)
 
-    for form in forms.values():
-        form.handle_post()
+    #for form in forms.values():
+        #form.handle_post()
 
     return render(request, 'two_cents/budgets.html', context=locals())
 
@@ -78,15 +75,19 @@ class BillForm(FormsetWrapper):
     def make_form(self, post, **kwargs):
         formset_cls = modelformset_factory(
                 model=models.Bill,
-                fields=['family', 'title', 'expense'],
-                field_classes={'family': FamilyChoiceField(self.request.user)},
+                fields=['title', 'expense', 'ui_order'],
+                widgets={
+                    'title': forms.TextInput(attrs={'class': 'title'}),
+                    'expense': forms.TextInput(attrs={'class': 'allowance'}),
+                    'ui_order': forms.HiddenInput(),
+                },
+                can_delete=True,
         )
         return formset_cls(post, **kwargs)
 
     def save_form(self):
         bills = self.formset.save(commit=False)
 
-        print(bills)
         for i, bill in enumerate(bills):
             bill.ui_order = i
             bill.save()
